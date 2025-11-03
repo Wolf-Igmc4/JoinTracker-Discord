@@ -3,6 +3,20 @@ import asyncio
 import datetime
 from .json_manager import save_json
 import os, json
+import requests
+
+# ---------------- Configuración FastAPI ----------------
+
+API_URL = os.getenv("FASTAPI_URL")
+API_KEY = os.getenv("FASTAPI_KEY")
+
+
+def _send_to_fastapi(data):
+    """Envía automáticamente los datos a FastAPI. No reemplaza el guardado local."""
+    try:
+        requests.post(API_URL, json=data, headers={"x-api-key": API_KEY})
+    except Exception as e:
+        print(f"Error enviando datos a FastAPI: {e}")
 
 
 def _get_paths(member):
@@ -22,6 +36,7 @@ def handle_call_data(call_data, member, channel_member):
 
     datos_path, _ = _get_paths(member)
     save_json(call_data, datos_path)
+    _send_to_fastapi(call_data)
 
 
 def check_depressive_attempts(member, is_depressed, call_data, recorded_attempts):
@@ -35,6 +50,7 @@ def check_depressive_attempts(member, is_depressed, call_data, recorded_attempts
 
         datos_path, _ = _get_paths(member)
         save_json(call_data, datos_path)
+        _send_to_fastapi(call_data)
 
         recorded_attempts[mid] = True
         print(
@@ -74,6 +90,7 @@ def save_time(time_entries, member, channel_member, enter=True):
 
     _, fechas_path = _get_paths(member)
     save_json(time_entries, fechas_path)
+    _send_to_fastapi(time_entries)
 
 
 def calculate_total_time(time_entries, member, channel_member):
@@ -108,6 +125,7 @@ def calculate_total_time(time_entries, member, channel_member):
 
     _, fechas_path = _get_paths(member)
     save_json(time_entries, fechas_path)
+    _send_to_fastapi(time_entries)
 
 
 # ======================== #
@@ -119,6 +137,7 @@ def update_channel_history(historiales_por_canal, channel_id, cambio):
     historiales_por_canal[channel_id].append(
         historiales_por_canal[channel_id][-1] + cambio
     )
+    _send_to_fastapi(historiales_por_canal)
 
 
 # ======================== #
