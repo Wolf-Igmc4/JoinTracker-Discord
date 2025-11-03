@@ -1,2 +1,6 @@
 discord.py>=2.0.0
 python-dotenv
+fastapi
+uvicorn[standard]
+psycopg2-binary
+sqlalchemy
