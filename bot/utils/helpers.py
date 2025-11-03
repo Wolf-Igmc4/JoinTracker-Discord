@@ -3,22 +3,37 @@ import asyncio
 import datetime
 from .json_manager import save_json
 import os, json
+import requests
 
 # ---------------- Configuración FastAPI ----------------
+API_URL = os.getenv(
+    "FASTAPI_URL",
+    "https://delicious-kelly-anth-zorax-61faf784.koyeb.app/save-json",
+)
+API_KEY = os.getenv("FASTAPI_KEY", None)
 
-API_URL = os.getenv("FASTAPI_URL")
-API_KEY = os.getenv("FASTAPI_KEY")
 
+def _send_to_fastapi(data, guild_id=None):
+    """
+    Envía datos a FastAPI incluyendo guild_id.
+    guild_id es opcional: si no se proporciona se usa 'default'.
+    No reemplaza el guardado local.
+    """
+    gid = str(guild_id) if guild_id is not None else "default"
+    payload = {"guild_id": gid, "data": data}
+    headers = {}
+    if API_KEY:
+        headers["x-api-key"] = API_KEY
 
-def _send_to_fastapi(data, guild_id):
-    """Envía datos a FastAPI incluyendo el guild_id"""
-    import requests
-
-    payload = {"guild_id": str(guild_id), "data": data}
     try:
-        requests.post(API_URL, json=payload, headers={"x-api-key": API_KEY})
+        resp = requests.post(API_URL, json=payload, headers=headers, timeout=6)
+        if resp.status_code != 200:
+            print(f"[FastAPI] Error HTTP {resp.status_code}: {resp.text}")
+        else:
+            # opcional: mostrar respuesta corta
+            print(f"[FastAPI] Datos enviados para guild {gid}.")
     except Exception as e:
-        print(f"Error enviando datos a FastAPI: {e}")
+        print(f"[FastAPI] Excepción al enviar datos para guild {gid}: {e}")
 
 
 def _get_paths(member):
