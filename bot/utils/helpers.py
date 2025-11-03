@@ -24,8 +24,11 @@ def _send_to_fastapi(data, guild_id=None):
     headers = {}
     if API_KEY:
         headers["x-api-key"] = API_KEY
+
+    endpoint = f"{API_URL}/save-json"  # esta es la clave
+
     try:
-        resp = requests.post(API_URL, json=payload, headers=headers, timeout=6)
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=6)
         resp.raise_for_status()
         print(f"[FastAPI] Datos enviados para guild {gid}.")
     except Exception as e:
