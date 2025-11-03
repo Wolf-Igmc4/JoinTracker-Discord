@@ -93,15 +93,6 @@ async def main():
             raise
 
 
-# Función para iniciar el servidor web FastAPI
-def start_webserver():
-    uvicorn.run(app, host="0.0.0.0", port=8080)
-
-
-# Hilo daemon para que se ejecute en paralelo con el bot
-threading.Thread(target=start_webserver, daemon=True).start()
-
-
 # Ejecutar solo si este archivo es el punto de entrada
 if __name__ == "__main__":
     import asyncio
