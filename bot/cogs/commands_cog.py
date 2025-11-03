@@ -77,7 +77,7 @@ class CommandsCog(commands.Cog):
 
     @app_commands.command(
         name="all_call_stats",
-        description="Devuelve las estadísticas completas de llamadas de un usuario en este servidor, con tiempo total en llamadas.",
+        description="Muestra estadísticas completas de llamadas de un usuario con tiempos totales.",
     )
     async def all_call_stats(
         self, interaction: discord.Interaction, member: discord.Member = None
