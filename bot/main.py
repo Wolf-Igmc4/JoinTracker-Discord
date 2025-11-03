@@ -7,7 +7,7 @@ from bot.webserver import app
 import uvicorn
 
 # Koyeb usa el puerto 8000 por defecto
-PORT = int(os.getenv("PORT", 8000))
+PORT = int(os.getenv("LOCAL_PORT", 8000))
 threading.Thread(
     target=lambda: uvicorn.run(app, host="0.0.0.0", port=PORT), daemon=True
 ).start()
