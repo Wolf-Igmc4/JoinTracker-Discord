@@ -6,6 +6,12 @@ import threading
 from bot.webserver import app
 import uvicorn
 
+PORT = int(os.getenv("LOCAL_PORT", 8080))
+
+threading.Thread(
+    target=lambda: uvicorn.run(app, host="0.0.0.0", port=PORT), daemon=True
+).start()
+
 # Cargar variables del archivo .env (TOKEN, etc.)
 load_dotenv()
 
