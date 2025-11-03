@@ -8,7 +8,7 @@ import requests
 # ---------------- Configuración FastAPI ----------------
 API_URL = os.getenv(
     "FASTAPI_URL",
-    "https://delicious-kelly-anth-zorax-61faf784.koyeb.app/save-json",
+    "https://delicious-kelly-anth-zorax-61faf784.koyeb.app",
 )
 API_KEY = os.getenv("FASTAPI_KEY", None)
 
