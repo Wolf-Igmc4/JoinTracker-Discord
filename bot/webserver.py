@@ -1,43 +1,39 @@
+# bot/webserver.py
 import os
-from fastapi import FastAPI
+import json
+from datetime import datetime
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, Column, Integer, JSON, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
 from dotenv import load_dotenv
 from bot.utils.json_manager import load_json
 
-# ---------------- Cargar .env ----------------
+# ---------------- Cargar variables de entorno ----------------
 load_dotenv()
 
-# ---------------- Configuración Postgres ----------------
 POSTGRES_USER = os.getenv("DATABASE_USER")
 POSTGRES_PASSWORD = os.getenv("DATABASE_PASSWORD")
 POSTGRES_HOST = os.getenv("DATABASE_HOST")
 POSTGRES_PORT = os.getenv("DATABASE_PORT", "5432")
 POSTGRES_DB = os.getenv("DATABASE_NAME")
 
-# Validar variables
 if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB]):
     raise ValueError(
         "Faltan variables de entorno de la base de datos. "
-        "Revisa tu .env y asegúrate de tener DATABASE_USER, DATABASE_PASSWORD, DATABASE_HOST y DATABASE_NAME definidos."
+        "Asegúrate de tener DATABASE_USER, DATABASE_PASSWORD, DATABASE_HOST y DATABASE_NAME."
     )
 
 DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
 # ---------------- Crear motor y sesión ----------------
-try:
-    engine = create_engine(DATABASE_URL, echo=False, future=True)
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-except Exception as e:
-    raise ConnectionError(f"No se pudo conectar a PostgreSQL: {e}")
-
+engine = create_engine(DATABASE_URL, echo=False, future=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 
-# ---------------- Modelo ----------------
+# ---------------- Modelo de tabla ----------------
 class JSONData(Base):
     __tablename__ = "json_data"
     id = Column(Integer, primary_key=True, index=True)
@@ -45,21 +41,24 @@ class JSONData(Base):
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
 
 
-# ---------------- Crear tablas ----------------
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception as e:
-    raise RuntimeError(f"Error creando tablas en PostgreSQL: {e}")
+# Crear tablas si no existen
+Base.metadata.create_all(bind=engine)
 
-# ---------------- FastAPI ----------------
+# ---------------- Instancia FastAPI ----------------
 app = FastAPI()
 
 
+# ---------------- Endpoints ----------------
 @app.post("/save-json")
-async def save_json_endpoint():
-    data = load_json()  # tu función existente
+async def save_json_endpoint(request: Request):
+    """
+    Guarda el JSON del bot en PostgreSQL.
+    Espera un query param opcional ?filename=datos.json para indicar qué JSON guardar.
+    """
+    filename = request.query_params.get("filename", "datos.json")
+    data = load_json(filename)
     if not data:
-        return {"error": "JSON vacío o no encontrado"}
+        return JSONResponse({"error": "JSON vacío o no encontrado"})
 
     session = SessionLocal()
     try:
@@ -76,6 +75,9 @@ async def save_json_endpoint():
 
 @app.get("/download-json")
 async def download_json_endpoint():
+    """
+    Devuelve el último JSON guardado en PostgreSQL.
+    """
     session = SessionLocal()
     try:
         record = session.query(JSONData).order_by(JSONData.created_at.desc()).first()

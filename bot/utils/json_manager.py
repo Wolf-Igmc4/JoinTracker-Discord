@@ -4,6 +4,7 @@ import json, os
 # Carpeta base donde se almacenan los datos
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 
+
 def load_json(filename):
     """
     Carga un archivo JSON desde DATA_DIR. Si no existe, devuelve un diccionario vacío.

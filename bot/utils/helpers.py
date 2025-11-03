@@ -3,7 +3,6 @@ import asyncio
 import datetime
 from .json_manager import save_json
 import os, json
-import requests
 
 # ---------------- Configuración FastAPI ----------------
 
@@ -11,10 +10,13 @@ API_URL = os.getenv("FASTAPI_URL")
 API_KEY = os.getenv("FASTAPI_KEY")
 
 
-def _send_to_fastapi(data):
-    """Envía automáticamente los datos a FastAPI. No reemplaza el guardado local."""
+def _send_to_fastapi(data, guild_id):
+    """Envía datos a FastAPI incluyendo el guild_id"""
+    import requests
+
+    payload = {"guild_id": str(guild_id), "data": data}
     try:
-        requests.post(API_URL, json=data, headers={"x-api-key": API_KEY})
+        requests.post(API_URL, json=payload, headers={"x-api-key": API_KEY})
     except Exception as e:
         print(f"Error enviando datos a FastAPI: {e}")
 
