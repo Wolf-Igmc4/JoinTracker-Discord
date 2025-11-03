@@ -1,6 +1,6 @@
 # bot/webserver.py
 import os
-import json
+from sqlalchemy.exc import OperationalError
 from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -75,12 +75,15 @@ async def save_json_endpoint(request: Request):
 
 @app.get("/download-json")
 async def download_json_endpoint():
-    """
-    Devuelve el último JSON guardado en PostgreSQL.
-    """
     session = SessionLocal()
     try:
-        record = session.query(JSONData).order_by(JSONData.created_at.desc()).first()
+        try:
+            record = (
+                session.query(JSONData).order_by(JSONData.created_at.desc()).first()
+            )
+        except OperationalError as e:
+            print(f"[DB][ERROR] OperationalError: {e}")
+            return JSONResponse({"error": "DB error, try later"}, status_code=503)
         if record:
             return JSONResponse(content=record.data)
         return {"error": "No hay datos guardados"}

@@ -24,14 +24,10 @@ def _send_to_fastapi(data, guild_id=None):
     headers = {}
     if API_KEY:
         headers["x-api-key"] = API_KEY
-
     try:
         resp = requests.post(API_URL, json=payload, headers=headers, timeout=6)
-        if resp.status_code != 200:
-            print(f"[FastAPI] Error HTTP {resp.status_code}: {resp.text}")
-        else:
-            # opcional: mostrar respuesta corta
-            print(f"[FastAPI] Datos enviados para guild {gid}.")
+        resp.raise_for_status()
+        print(f"[FastAPI] Datos enviados para guild {gid}.")
     except Exception as e:
         print(f"[FastAPI] Excepción al enviar datos para guild {gid}: {e}")
 
@@ -53,7 +49,6 @@ def handle_call_data(call_data, member, channel_member):
 
     datos_path, _ = _get_paths(member)
     save_json(call_data, datos_path)
-    _send_to_fastapi(call_data)
 
 
 def check_depressive_attempts(member, is_depressed, call_data, recorded_attempts):
@@ -67,7 +62,6 @@ def check_depressive_attempts(member, is_depressed, call_data, recorded_attempts
 
         datos_path, _ = _get_paths(member)
         save_json(call_data, datos_path)
-        _send_to_fastapi(call_data)
 
         recorded_attempts[mid] = True
         print(
@@ -107,7 +101,6 @@ def save_time(time_entries, member, channel_member, enter=True):
 
     _, fechas_path = _get_paths(member)
     save_json(time_entries, fechas_path)
-    _send_to_fastapi(time_entries)
 
 
 def calculate_total_time(time_entries, member, channel_member):
@@ -142,7 +135,6 @@ def calculate_total_time(time_entries, member, channel_member):
 
     _, fechas_path = _get_paths(member)
     save_json(time_entries, fechas_path)
-    _send_to_fastapi(time_entries)
 
 
 # ======================== #
@@ -154,7 +146,6 @@ def update_channel_history(historiales_por_canal, channel_id, cambio):
     historiales_por_canal[channel_id].append(
         historiales_por_canal[channel_id][-1] + cambio
     )
-    _send_to_fastapi(historiales_por_canal)
 
 
 # ======================== #
