@@ -91,7 +91,7 @@ async def setup_hook():
     await bot.load_extension("bot.cogs.voice_cog")
     await bot.load_extension("bot.cogs.commands_cog")
     await bot.load_extension("bot.cogs.misc_cog")
-    await bot.load_extension("bot.cogs.sync_cog")
+    # await bot.load_extension("bot.cogs.sync_cog")
 
 
 @bot.event
