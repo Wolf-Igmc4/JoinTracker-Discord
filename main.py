@@ -1,15 +1,11 @@
 # bot/main.py
 import os, sys, subprocess, socket, time, asyncio, traceback, atexit
 from dotenv import load_dotenv
-
-load_dotenv()
-
 import discord
 from discord.ext import commands
+from webserver import app
 
-from bot.webserver import app
-
-# from bot.utils.api_restore import restore_cache_from_api
+load_dotenv()
 
 PORT = int(os.getenv("PORT", 8000))
 HOST = "0.0.0.0"
@@ -20,7 +16,7 @@ def start_uvicorn_as_subprocess():
         sys.executable,
         "-m",
         "uvicorn",
-        "bot.webserver:app",
+        "webserver:app",
         "--host",
         HOST,
         "--port",
@@ -85,13 +81,12 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 @bot.event
 async def setup_hook():
     # restaurar JSON local desde API una sola vez
-    # await restore_cache_from_api()
 
     # cargar cogs aquí
-    await bot.load_extension("bot.cogs.voice_cog")
-    await bot.load_extension("bot.cogs.commands_cog")
-    await bot.load_extension("bot.cogs.misc_cog")
-    # await bot.load_extension("bot.cogs.sync_cog")
+    await bot.load_extension("src.cogs.voice_cog")
+    await bot.load_extension("src.cogs.commands_cog")
+    await bot.load_extension("src.cogs.misc_cog")
+    # await bot.load_extension("src.cogs.sync_cog")
 
 
 @bot.event

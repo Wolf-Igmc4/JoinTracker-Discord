@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, Column, Integer, JSON, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-from bot.utils.json_manager import load_json
+from src.utils.json_manager import load_json
 
 # ---------------- Cargar variables de entorno ----------------
 load_dotenv()

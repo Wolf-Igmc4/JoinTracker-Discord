@@ -1,4 +1,4 @@
-# bot/cogs/misc_cog.py
+# src/cogs/misc_cog.py
 # Cog para funcionalidades misceláneas del bot, incluyendo mensajes cuando es mencionado.
 from discord.ext import commands
 import discord
@@ -23,7 +23,6 @@ class MiscCog(commands.Cog):
                     "📊 **Comandos principales:**\n"
                     "• `/call_stats` → Muestra cuántas veces un usuario se ha unido a otro en llamada.\n"
                     "• `/all_call_stats` → Muestra todas las estadísticas de un usuario.\n"
-                    "• `/call_time` → Muestra el tiempo total en llamada entre dos usuarios.\n\n"
                     "Entre otras funciones, registro los intentos de hablar solo (llamadas en solitario demasiado largas sin que nadie se una a ti).\n"
                     "Puedes ver la información de los comandos escribiendo '/' y leyendo su descripción."
                 ),

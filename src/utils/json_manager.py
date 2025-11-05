@@ -1,11 +1,10 @@
-# bot/utils/json_manager.py
+# src/utils/json_manager.py
 import json, os
-
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+from src.config import RAIZ_PROYECTO
 
 
 def load_json(filename):
-    path = os.path.join(DATA_DIR, filename)
+    path = os.path.join(RAIZ_PROYECTO, "data", filename)
     if not os.path.exists(path):
         print(
             f"\033[0;33m{filename} no existe, se creará automáticamente cuando se añada un dato.\033[0m"
@@ -18,7 +17,7 @@ def load_json(filename):
 
 
 def save_json(data, filename):
-    path = os.path.join(DATA_DIR, filename)
+    path = os.path.join(RAIZ_PROYECTO, "data", filename)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)

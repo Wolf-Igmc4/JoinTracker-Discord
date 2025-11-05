@@ -1,8 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from bot.utils.json_manager import load_json
-from bot.utils.helpers import update_json_file
+from src.utils.json_manager import load_json
+from src.utils.helpers import update_json_file
 import os
 
 

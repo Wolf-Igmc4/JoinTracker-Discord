@@ -6,11 +6,8 @@ import os, json
 import requests
 
 # ---------------- Configuración FastAPI ----------------
-API_URL = os.getenv(
-    "FASTAPI_URL",
-    "https://delicious-kelly-anth-zorax-61faf784.koyeb.app",
-)
-API_KEY = os.getenv("FASTAPI_KEY", None)
+API_URL = os.getenv("PUBLIC_API_BASE")
+API_KEY = os.getenv("API_KEY", None)
 
 
 def _send_to_fastapi(data, guild_id=None):
@@ -25,7 +22,7 @@ def _send_to_fastapi(data, guild_id=None):
     if API_KEY:
         headers["x-api-key"] = API_KEY
 
-    endpoint = f"{API_URL}/save-json"  # esta es la clave
+    endpoint = f"{API_URL}/save-json"
 
     try:
         resp = requests.post(endpoint, json=payload, headers=headers, timeout=6)
