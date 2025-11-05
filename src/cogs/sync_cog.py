@@ -22,11 +22,11 @@ class SyncCog(commands.Cog):
         for guild in self.bot.guilds:
             gid = str(guild.id)
 
-            datos_path = os.path.join("bot", "data", gid, "datos.json")
+            datos_path = os.path.join("bot", "data", gid, "stats.json")
             fechas_path = os.path.join("bot", "data", gid, "fechas.json")
 
             if os.path.exists(datos_path):
-                call_data = load_json(f"{gid}/datos.json")
+                call_data = load_json(f"{gid}/stats.json")
                 _send_to_fastapi(call_data, guild_id=gid)
 
             if os.path.exists(fechas_path):

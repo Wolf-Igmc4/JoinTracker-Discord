@@ -53,9 +53,9 @@ app = FastAPI()
 async def save_json_endpoint(request: Request):
     """
     Guarda el JSON del bot en PostgreSQL.
-    Espera un query param opcional ?filename=datos.json para indicar qué JSON guardar.
+    Espera un query param opcional ?filename=stats.json para indicar qué JSON guardar.
     """
-    filename = request.query_params.get("filename", "datos.json")
+    filename = request.query_params.get("filename", "stats.json")
     data = load_json(filename)
     if not data:
         return JSONResponse({"error": "JSON vacío o no encontrado"})

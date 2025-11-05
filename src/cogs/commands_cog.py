@@ -40,7 +40,7 @@ class CommandsCog(commands.Cog):
         user2: discord.Member = None,
     ):
         guild = interaction.guild
-        call_data = load_json(f"{guild.id}/datos.json")
+        call_data = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/fechas.json")
 
         user1 = user1 or interaction.user
@@ -55,8 +55,12 @@ class CommandsCog(commands.Cog):
             )
             return
         # === Datos de veces que se unieron ===
-        count_user1_to_user2 = call_data.get(u2, {}).get(u1, 0)
-        count_user2_to_user1 = call_data.get(u1, {}).get(u2, 0)
+        calls_user1_to_user2 = (
+            call_data.get(u2, {}).get(u1, {}).get(f"calls_started_by_{u1}", 0)
+        )
+        calls_user2_to_user1 = (
+            call_data.get(u1, {}).get(u2, {}).get(f"calls_started_by_{u2}", 0)
+        )
 
         # === Datos de tiempo en llamada ===
         total_seconds = 0
@@ -68,8 +72,8 @@ class CommandsCog(commands.Cog):
         # === Mensaje final ===
         msg = (
             f"📞 Estadísticas de llamada entre **{user1.display_name}** y **{user2.display_name}:**\n\n"
-            f"🔹 **{user1.display_name} → {user2.display_name}:** {self.fmt_count(count_user1_to_user2)}\n"
-            f"🔹 **{user2.display_name} → {user1.display_name}:** {self.fmt_count(count_user2_to_user1)}\n"
+            f"🔹 **{user1.display_name} → {user2.display_name}:** {self.fmt_count(calls_user1_to_user2)}\n"
+            f"🔹 **{user2.display_name} → {user1.display_name}:** {self.fmt_count(calls_user2_to_user1)}\n"
             f"🕒 Tiempo total compartido en llamada: **{self.fmt_time(total_seconds)}**"
         )
 
@@ -83,8 +87,8 @@ class CommandsCog(commands.Cog):
         self, interaction: discord.Interaction, member: discord.Member = None
     ):
         guild = interaction.guild
-        call_data = load_json(f"{guild.id}/datos.json")
-        time_entries = load_json(f"{guild.id}/fechas.json")
+        call_data = load_json(f"{guild.id}/stats.json")  # stats.json (nuevo)
+        time_entries = load_json(f"{guild.id}/fechas.json")  # buffer antiguo
 
         member = member or interaction.user
         mid = str(member.id)
@@ -100,52 +104,89 @@ class CommandsCog(commands.Cog):
 
         msg = f"📊 **Estadísticas de llamadas de {member.display_name}:**\n\n"
 
+        # ==== Intentos depresivos primero ====
+        if appears_as_target:
+            intentos = call_data[mid].get("intentos_depresivos", 0)
+            depressive_time = call_data[mid].get("depressive_time", 0)
+            msg += f"🔹 **Intentos depresivos:** {intentos}, durante {self.fmt_time(depressive_time)}\n\n"
+
         # ==== Otros se unieron al usuario ====
         if appears_as_target:
             msg += f"🔹 **Veces que otros se unieron a {member.display_name}:**\n"
             for uid, val in call_data[mid].items():
-                if uid == "intentos_depresivos":
-                    msg += f"   • Intentos depresivos: {val}\n"
+                if uid in ["intentos_depresivos", "depressive_time"]:
                     continue
+
                 try:
                     user = await self.bot.fetch_user(int(uid))
-                    seconds = (
-                        time_entries.get(mid, {}).get(uid, {}).get("total_time", 0)
-                    )
-                    msg += f"   • {user.display_name} → {val} veces, {self.fmt_time(seconds)} en total\n"
                 except Exception:
+                    user = None
+
+                if isinstance(val, dict):
+                    count_key = f"calls_started_by_{uid}"
+                    val_display = val.get(count_key, 0)
+                else:
+                    val_display = val
+
+                # <-- aquí: preferimos total_shared_time desde stats (call_data)
+                seconds = call_data.get(mid, {}).get(uid, {}).get("total_shared_time")
+                # fallback: si no está (datos antiguos) miramos en fechas.json
+                if seconds is None:
                     seconds = (
                         time_entries.get(mid, {}).get(uid, {}).get("total_time", 0)
                     )
-                    msg += f"   • [Usuario desconocido {uid}] → {val} veces, {self.fmt_time(seconds)} en total\n"
+
+                name_display = (
+                    user.display_name if user else f"[Usuario desconocido {uid}]"
+                )
+                msg += f"   • {name_display} → {self.fmt_count(val_display)}, {self.fmt_time(seconds)} en total\n"
             msg += "\n"
 
         # ==== Usuario se unió a otros ====
         if appears_as_source:
             msg += f"🔹 **Veces que {member.display_name} se unió a otros:**\n"
             for target_id, subdict in call_data.items():
-                if mid in subdict:
+                if mid in subdict and target_id not in [
+                    "intentos_depresivos",
+                    "depressive_time",
+                ]:
+                    val = subdict[mid]
                     try:
                         user = await self.bot.fetch_user(int(target_id))
-                        seconds = (
-                            time_entries.get(mid, {})
-                            .get(target_id, {})
-                            .get("total_time", 0)
-                        )
-                        msg += f"   • {user.display_name} → {subdict[mid]} veces, {self.fmt_time(seconds)} en total\n"
                     except Exception:
+                        user = None
+
+                    if isinstance(val, dict):
+                        count_key = f"calls_started_by_{mid}"
+                        val_display = val.get(count_key, 0)
+                    else:
+                        val_display = val
+
+                    # <-- aquí también: preferimos total_shared_time desde stats (call_data)
+                    seconds = (
+                        call_data.get(target_id, {})
+                        .get(mid, {})
+                        .get("total_shared_time")
+                    )
+                    if seconds is None:
                         seconds = (
                             time_entries.get(mid, {})
                             .get(target_id, {})
                             .get("total_time", 0)
                         )
-                        msg += f"   • [Usuario desconocido {target_id}] → {subdict[mid]} veces, {self.fmt_time(seconds)} en total\n"
+
+                    name_display = (
+                        user.display_name
+                        if user
+                        else f"[Usuario desconocido {target_id}]"
+                    )
+                    msg += f"   • {name_display} → {self.fmt_count(val_display)}, {self.fmt_time(seconds)} en total\n"
 
         await interaction.response.send_message(msg)
 
     @app_commands.command(
         name="send_json",
-        description="Envía los archivos datos.json y fechas.json del servidor (solo admin).",
+        description="Envía los archivos stats.json y fechas.json del servidor (solo admin).",
     )
     async def send_json(self, interaction: discord.Interaction):
         user = interaction.user
@@ -159,7 +200,7 @@ class CommandsCog(commands.Cog):
             return
 
         files = []
-        for filename in ["datos.json", "fechas.json"]:
+        for filename in ["stats.json", "fechas.json"]:
             path = os.path.join(self.data_dir, str(guild.id), filename)
             if os.path.exists(path):
                 files.append(discord.File(path))
@@ -199,9 +240,9 @@ class CommandsCog(commands.Cog):
         )
 
         # Diccionario con variables a actualizar
-        global_vars = {"datos.json": self.call_data, "fechas.json": self.time_entries}
+        global_vars = {"stats.json": self.call_data, "fechas.json": self.time_entries}
 
-        for filename in ["datos.json", "fechas.json"]:
+        for filename in ["stats.json", "fechas.json"]:
             await update_json_file(self.bot, interaction, filename, global_vars)
 
         await interaction.followup.send(

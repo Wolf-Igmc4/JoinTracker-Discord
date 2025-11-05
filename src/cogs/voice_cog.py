@@ -17,7 +17,7 @@ class VoiceCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.timeout = 150  # Tiempo en segundos para considerar un intento depresivo
+        self.timeout = 20  # Tiempo en segundos para considerar un intento depresivo
         self.timers = {}  # Guarda tareas asyncio activas por usuario
         self.historiales_por_canal = (
             {}
@@ -53,50 +53,65 @@ class VoiceCog(commands.Cog):
         )
 
         guild = member.guild
-        call_data = load_json(f"{guild.id}/datos.json")
+        # cargamos stats (antes datos.json) y las fechas
+        stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/fechas.json")
 
         if len(after.channel.members) >= 2:
             for m in after.channel.members:
                 self.cancel_timer(m)
+                # si el usuario estaba marcado como deprimido, consolidamos su tiempo solo
+                if self.is_depressed.get(str(m.id)):
+                    check_depressive_attempts(
+                        m,
+                        self.is_depressed,
+                        stats,
+                        self.recorded_attempts,
+                        time_entries,
+                    )
+
                 if m != member:
-                    handle_call_data(call_data, member, m)
+                    # handle_call_data ahora espera stats
+                    handle_call_data(stats, member, m)
+                    # save_time usa time_entries como buffer de entradas
                     save_time(time_entries, member, m, True)
         else:
-            self.start_timer(member)
+            self.start_timer(member, stats, time_entries)
 
     async def member_left(self, member, before):
         """Maneja la salida de un miembro de un canal de voz."""
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
         print(
             f"\033[91m[{member.guild.name}] {member.display_name} ha salido de {before.channel.name}. "
-            f"Ahora quedan {len(before.channel.members)} miembros: {', '.join(m.display_name for m in before.channel.members)}.\033[0m"
+            f"Ahora quedan {len(before.channel.members)} miembros: {', '.join(m.display_name for m in before.channel.members)}\033[0m"
         )
 
         guild = member.guild
-        call_data = load_json(f"{guild.id}/datos.json")
+        stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/fechas.json")
 
+        # check_depressive_attempts ahora recibe stats
         check_depressive_attempts(
-            member, self.is_depressed, call_data, self.recorded_attempts
+            member, self.is_depressed, stats, self.recorded_attempts, time_entries
         )
         self.cancel_timer(member)
 
         for m in before.channel.members:
             if m != member:
                 save_time(time_entries, member, m, False)
-                calculate_total_time(time_entries, member, m)
+                # pasar stats como segundo argumento
+                calculate_total_time(time_entries, stats, member, m)
 
     async def member_moved(self, member, before, after):
         """Maneja cuando un usuario se mueve de un canal a otro."""
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
         update_channel_history(self.historiales_por_canal, after.channel.id, 1)
         print(
-            f"[{member.guild.name}] {member.display_name} se ha movido de {before.channel.name} a {after.channel.name}."
+            f"[{member.guild.name}] {member.display_name} se ha movido de {before.channel.name} a {after.channel.name}. Ahora hay {len(after.channel.members)} miembros: {', '.join(m.display_name for m in after.channel.members)}."
         )
 
         guild = member.guild
-        call_data = load_json(f"{guild.id}/datos.json")
+        stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/fechas.json")
 
         # Si el canal destino tiene 2 o más personas, registrar la interacción
@@ -109,29 +124,33 @@ class VoiceCog(commands.Cog):
 
                 # registrar llamadas/tiempo entre el que se ha movido y los demás
                 if m != member:
-                    handle_call_data(call_data, member, m)
+                    handle_call_data(stats, member, m)
                     save_time(time_entries, member, m, True)
 
         else:
             # queda solo en el canal destino
-            self.start_timer(member)
+            self.start_timer(member, stats, time_entries)
 
-        # Guardar cambios en los JSON
-        save_json(call_data, f"{guild.id}/datos.json")
+        # Guardar cambios en los JSON (helpers ya guardan también, pero no hace daño)
+        save_json(stats, f"{guild.id}/stats.json")
         save_json(time_entries, f"{guild.id}/fechas.json")
 
-    def start_timer(self, member):
-        """Inicia el temporizador asincrónico para el miembro dado."""
+    def start_timer(self, member, stats, time_entries):
         mid = str(member.id)
         if mid in self.timers:
-            return  # Ya hay un temporizador activo
+            return
 
-        # Usa el timeout del cog
         task = asyncio.create_task(
-            timer_task(member, self.is_depressed, self.timers, self.timeout)
+            timer_task(
+                member,
+                self.is_depressed,
+                self.timers,
+                self.timeout,
+                stats,
+                time_entries,
+            )
         )
         self.timers[mid] = task
-
         print(
             f"\033[93mTemporizador iniciado para {member.display_name} ({self.timeout}s).\033[0m"
         )

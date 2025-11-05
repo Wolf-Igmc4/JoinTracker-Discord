@@ -35,51 +35,51 @@ def _send_to_fastapi(data, guild_id=None):
 def _get_paths(member):
     """Devuelve las rutas base de los JSON según el servidor."""
     gid = str(member.guild.id)
-    return f"{gid}/datos.json", f"{gid}/fechas.json"
+    return f"{gid}/stats.json", f"{gid}/fechas.json"
 
 
-# ======================== #
-#  MANEJO DE CALL DATA     #
-# ======================== #
-def handle_call_data(call_data, member, channel_member):
-    """Registra cuántas veces un usuario entra donde hay otro."""
-    cmid, mid = str(channel_member.id), str(member.id)
-    call_data.setdefault(cmid, {}).setdefault(mid, 0)
-    call_data[cmid][mid] += 1
+########################################
+# COUNT JOIN EVENTS (+1 cuando uno entra donde hay otro)
+########################################
+def handle_call_data(stats, member, channel_member):
+    mid = str(member.id)  # quien entra
+    oid = str(channel_member.id)  # quien ya estaba en el canal
 
-    datos_path, _ = _get_paths(member)
-    save_json(call_data, datos_path)
+    # garantizar estructuras intermedias
+    stats.setdefault(oid, {})
+    stats.setdefault(mid, {})  # aseguramos que exista la entrada recíproca también
+
+    # asegurarnos de que el dict para oid->mid exista
+    stats[oid].setdefault(mid, {})
+    entry = stats[oid][mid]
+
+    # clave específica del contador (quien entra)
+    calls_key = f"calls_started_by_{mid}"
+
+    # inicializar campos si faltan
+    entry.setdefault(calls_key, 0)
+    entry.setdefault("total_shared_time", 0)
+
+    # incrementar solo el contador del que entra
+    entry[calls_key] += 1
+
+    # garantizar que el lado recíproco tiene el campo total_shared_time (simetría)
+    stats[mid].setdefault(oid, {})
+    stats[mid][oid].setdefault("total_shared_time", entry["total_shared_time"])
+
+    # persistir
+    stats_path, _ = _get_paths(member)
+    save_json(stats, stats_path)
 
 
-def check_depressive_attempts(member, is_depressed, call_data, recorded_attempts):
-    """Registra intentos depresivos si el usuario estuvo solo en llamada."""
-    mid = str(member.id)
-    if is_depressed.get(mid) and not recorded_attempts.get(mid):
-        call_data.setdefault(mid, {})
-        call_data[mid]["intentos_depresivos"] = (
-            call_data[mid].get("intentos_depresivos", 0) + 1
-        )
-
-        datos_path, _ = _get_paths(member)
-        save_json(call_data, datos_path)
-
-        recorded_attempts[mid] = True
-        print(
-            f"{member.display_name} ha tenido un intento depresivo ({call_data[mid]['intentos_depresivos']})"
-        )
-
-
-# ======================== #
-#   MANEJO DE TIEMPO VC    #
-# ======================== #
+########################################
+# tiempo
+########################################
 def save_time(time_entries, member, channel_member, enter=True):
-    """Guarda los tiempos de entrada/salida entre usuarios."""
     current_time = datetime.datetime.now().isoformat()
 
     def ensure_entry(a, b):
-        time_entries.setdefault(str(a.id), {}).setdefault(
-            str(b.id), {"entries": [], "total_time": 0}
-        )
+        time_entries.setdefault(str(a.id), {}).setdefault(str(b.id), {"entries": []})
 
     def add_start(a, b):
         ensure_entry(a, b)
@@ -103,8 +103,9 @@ def save_time(time_entries, member, channel_member, enter=True):
     save_json(time_entries, fechas_path)
 
 
-def calculate_total_time(time_entries, member, channel_member):
+def calculate_total_time(time_entries, stats, member, channel_member):
     """Recalcula el tiempo total compartido entre dos usuarios."""
+
     from datetime import datetime
 
     mid, oid = str(member.id), str(channel_member.id)
@@ -112,7 +113,7 @@ def calculate_total_time(time_entries, member, channel_member):
     if mid not in time_entries or oid not in time_entries[mid]:
         return
 
-    # Tiempo de las entradas actuales
+    # Calcula tiempo nuevo desde las entradas activas
     new_total = sum(
         (
             datetime.fromisoformat(e["end_time"])
@@ -122,12 +123,15 @@ def calculate_total_time(time_entries, member, channel_member):
         if e["start_time"] and e["end_time"]
     )
 
-    # Sumar al total previo
-    prev_total = time_entries[mid][oid].get("total_time", 0)
+    # suma al total previo
+    stats.setdefault(mid, {}).setdefault(oid, {"total_shared_time": 0})
+    stats.setdefault(oid, {}).setdefault(mid, {"total_shared_time": 0})
+
+    prev_total = stats[mid][oid].get("total_shared_time", 0)
     total = prev_total + new_total
 
-    time_entries[mid][oid]["total_time"] = total
-    time_entries[oid][mid]["total_time"] = total
+    stats[mid][oid]["total_shared_time"] = total
+    stats[oid][mid]["total_shared_time"] = total  # recíproco
 
     # limpiar histórico ya consolidado
     time_entries[mid][oid]["entries"] = []
@@ -136,43 +140,136 @@ def calculate_total_time(time_entries, member, channel_member):
     _, fechas_path = _get_paths(member)
     save_json(time_entries, fechas_path)
 
+    # guardar stats actualizado
+    stats_path, _ = _get_paths(member)
+    save_json(stats, stats_path)
 
-# ======================== #
-#   HISTORIAL DE CANALES   #
-# ======================== #
+
+########################################
+# Depressive attempts — lo dejo igual
+########################################
+def check_depressive_attempts(
+    member, is_depressed, stats, recorded_attempts, time_entries=None
+):
+    """
+    Consolida un intento depresivo:
+    - incrementa stats[mid]['intentos_depresivos']
+    - suma el tiempo solo leyendo time_entries['_solo'][mid] (si existe) en stats[mid]['depressive_time']
+    - borra el marcador de time_entries y guarda ambos JSON
+    - marca recorded_attempts[mid] = True para no duplicar
+    """
+    import datetime
+
+    mid = str(member.id)
+
+    # precondiciones: debe estar marcado como deprimido y no registrado aún
+    if not is_depressed.get(mid):
+        return
+    if recorded_attempts.get(mid):
+        return
+
+    stats.setdefault(mid, {})
+    # incrementar contador de intentos
+    stats[mid]["intentos_depresivos"] = stats[mid].get("intentos_depresivos", 0) + 1
+
+    solo_secs = 0.0
+
+    # Intentamos leer marcador desde time_entries (fechas.json) en la clave especial "_solo"
+    if time_entries is not None:
+        solo_container = time_entries.get("_solo", {})
+        solo = solo_container.get(mid)
+        if solo and solo.get("start_time"):
+            try:
+                solo_start = datetime.datetime.fromisoformat(solo["start_time"])
+                now = datetime.datetime.now()
+                solo_secs = (now - solo_start).total_seconds()
+            except Exception:
+                solo_secs = 0.0
+
+            # borrar el marcador en time_entries y persistir
+            try:
+                del time_entries["_solo"][mid]
+                if not time_entries.get("_solo"):
+                    # si quedó vacío, quítalo del dict para mantener limpio el JSON
+                    time_entries.pop("_solo", None)
+                _, fechas_path = _get_paths(member)
+                save_json(time_entries, fechas_path)
+            except Exception:
+                pass
+
+    # Acumular el tiempo en stats
+    stats[mid]["depressive_time"] = stats[mid].get("depressive_time", 0) + solo_secs
+
+    # Guardar stats
+    try:
+        stats_path, _ = _get_paths(member)
+        save_json(stats, stats_path)
+    except Exception:
+        pass
+
+    # Marcar para que no se repita
+    recorded_attempts[mid] = True
+
+    # Log legible
+    print(
+        f"{member.display_name} ha tenido un intento depresivo ({stats[mid]['intentos_depresivos']}), "
+        f"tiempo solo acumulado ahora: {stats[mid]['depressive_time']:.2f}s"
+    )
+
+
+########################################
+# canal histórico
+########################################
 def update_channel_history(historiales_por_canal, channel_id, cambio):
-    """Actualiza el historial del número de miembros en un canal."""
     historiales_por_canal.setdefault(channel_id, [0])
     historiales_por_canal[channel_id].append(
         historiales_por_canal[channel_id][-1] + cambio
     )
 
 
-# ======================== #
-#    TEMPORIZADOR DE VC    #
-# ======================== #
-async def timer_task(member, is_depressed, timers, timeout=150):
-    """Marca un usuario como deprimido si permanece solo demasiado tiempo."""
+########################################
+# timer VC
+########################################
+async def timer_task(
+    member, is_depressed, timers, timeout=150, stats=None, time_entries=None
+):
+    """
+    Marca un usuario como deprimido si permanece solo demasiado tiempo.
+    Si se pasa time_entries, guarda en fechas.json (time_entries) la marca de solo_start.
+    """
     time_left = timeout
     try:
         while time_left > 0:
             await asyncio.sleep(1)
-            # Solo imprimir cada 30 segundos o al inicio
             if time_left % 30 == 0 or time_left == timeout:
                 print(
                     f"[{member.guild.name}] {member.display_name} se deprimirá en {time_left}s."
                 )
-
             time_left -= 1
 
-        # si se ha agotado el tiempo y SIGUE solo → marcar deprimido
+        mid = str(member.id)
+        is_depressed[mid] = True
+
+        # Guardamos el marcador en time_entries (fechas.json) para robustez local
+        if time_entries is not None:
+            from datetime import datetime
+
+            # Estructura: time_entries["_solo"][mid] = {"start_time": iso, "channel_id": <id>}
+            time_entries.setdefault("_solo", {})
+            time_entries["_solo"][mid] = {
+                "start_time": datetime.now().isoformat(),
+                "channel_id": getattr(member.voice.channel, "id", None),
+            }
+            # persistir
+            _, fechas_path = _get_paths(member)
+            save_json(time_entries, fechas_path)
+
         print(
-            f"[{member.guild.name}] {member.display_name} se deprimirá mucho en {member.voice.channel.name} si nadie entra con él ahora."
+            f"[{member.guild.name}] {member.display_name} se ha marcado como deprimido (marcado en fechas.json)."
         )
-        is_depressed[str(member.id)] = True
 
     except asyncio.CancelledError:
-        # Se canceló antes de tiempo (se llamó a cancel_timer para el usuario desde voice_cog)
+        # se canceló antes de tiempo (timer cancelado)
         print(
             f"\033[93m[{member.guild.name}] Temporizador cancelado para {member.display_name} antes de deprimirse (quedaban {time_left}s).\033[0m"
         )
