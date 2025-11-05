@@ -31,11 +31,18 @@ class VoiceCog(commands.Cog):
     async def on_voice_state_update(self, member, before, after):
         """Detecta cambios en los canales de voz."""
         try:
-            if before.channel is None and after.channel:
-                await self.member_joined(member, after)
-            elif before.channel and after.channel and before.channel != after.channel:
+            # Movimiento entre canales
+            if (
+                before.channel
+                and after.channel
+                and before.channel.id != after.channel.id
+            ):
                 await self.member_moved(member, before, after)
-            elif before.channel and after.channel is None:
+            # Entrada a canal
+            elif not before.channel and after.channel:
+                await self.member_joined(member, after)
+            # Salida de canal
+            elif before.channel and not after.channel:
                 await self.member_left(member, before)
         except Exception as e:
             print(f"Error en voice update: {e}")
@@ -71,9 +78,7 @@ class VoiceCog(commands.Cog):
                     )
 
                 if m != member:
-                    # handle_call_data ahora espera stats
                     handle_call_data(stats, member, m)
-                    # save_time usa time_entries como buffer de entradas
                     save_time(time_entries, member, m, True)
         else:
             self.start_timer(member, stats, time_entries)
@@ -90,7 +95,6 @@ class VoiceCog(commands.Cog):
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/fechas.json")
 
-        # check_depressive_attempts ahora recibe stats
         check_depressive_attempts(
             member, self.is_depressed, stats, self.recorded_attempts, time_entries
         )
@@ -98,8 +102,8 @@ class VoiceCog(commands.Cog):
 
         for m in before.channel.members:
             if m != member:
-                save_time(time_entries, member, m, False)
-                # pasar stats como segundo argumento
+                save_time(time_entries, member, m, True)
+                print("Se ha guardado tiempo de llamada al unirse.")
                 calculate_total_time(time_entries, stats, member, m)
 
     async def member_moved(self, member, before, after):
@@ -114,26 +118,23 @@ class VoiceCog(commands.Cog):
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/fechas.json")
 
-        # Si el canal destino tiene 2 o más personas, registrar la interacción
+        # Si el canal destino tiene al menos 2 o más personas, registrar la interacción
         if len(after.channel.members) >= 2:
+            self.cancel_timer(member)
             for m in after.channel.members:
-                # opcional: cancelar timers de los que ahora tienen compañía
-                self.cancel_timer(m)
-                self.is_depressed[str(m.id)] = False
-                self.recorded_attempts.pop(str(m.id), None)
-
                 # registrar llamadas/tiempo entre el que se ha movido y los demás
                 if m != member:
-                    handle_call_data(stats, member, m)
                     save_time(time_entries, member, m, True)
+                    handle_call_data(stats, member, m)
 
         else:
-            # queda solo en el canal destino
+            # Si el canal origen queda con 1 persona, iniciar temporizador para esa persona
+            print("[DEBUG] Canal destino queda solo con el usuario.")
             self.start_timer(member, stats, time_entries)
-
-        # Guardar cambios en los JSON (helpers ya guardan también, pero no hace daño)
-        save_json(stats, f"{guild.id}/stats.json")
-        save_json(time_entries, f"{guild.id}/fechas.json")
+            for m in before.channel.members:
+                if m != member:
+                    save_time(time_entries, member, m, False)
+                    calculate_total_time(time_entries, stats, member, m)
 
     def start_timer(self, member, stats, time_entries):
         mid = str(member.id)
@@ -146,7 +147,6 @@ class VoiceCog(commands.Cog):
                 self.is_depressed,
                 self.timers,
                 self.timeout,
-                stats,
                 time_entries,
             )
         )

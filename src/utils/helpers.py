@@ -1,6 +1,5 @@
 # bot/utils/helpers.py
 import asyncio
-import datetime
 from .json_manager import save_json
 import os, json
 import requests
@@ -38,44 +37,42 @@ def _get_paths(member):
     return f"{gid}/stats.json", f"{gid}/fechas.json"
 
 
-########################################
-# COUNT JOIN EVENTS (+1 cuando uno entra donde hay otro)
-########################################
+# ============================== #
+#  MANEJO DE EVENTOS DE LLAMADA  #
+# ============================== #
 def handle_call_data(stats, member, channel_member):
-    mid = str(member.id)  # quien entra
-    oid = str(channel_member.id)  # quien ya estaba en el canal
+    """Actualiza las estadísticas de llamadas entre dos usuarios."""
+    mid = str(member.id)
+    oid = str(channel_member.id)
 
-    # garantizar estructuras intermedias
+    # Garantiza que existan las estructuras necesarias
     stats.setdefault(oid, {})
-    stats.setdefault(mid, {})  # aseguramos que exista la entrada recíproca también
-
-    # asegurarnos de que el dict para oid->mid exista
+    stats.setdefault(mid, {})
     stats[oid].setdefault(mid, {})
-    entry = stats[oid][mid]
-
-    # clave específica del contador (quien entra)
-    calls_key = f"calls_started_by_{mid}"
-
-    # inicializar campos si faltan
-    entry.setdefault(calls_key, 0)
-    entry.setdefault("total_shared_time", 0)
-
-    # incrementar solo el contador del que entra
-    entry[calls_key] += 1
-
-    # garantizar que el lado recíproco tiene el campo total_shared_time (simetría)
     stats[mid].setdefault(oid, {})
-    stats[mid][oid].setdefault("total_shared_time", entry["total_shared_time"])
 
-    # persistir
+    calls_key = f"calls_started_by_{mid}"
+    stats[oid][mid].setdefault(calls_key, 0)
+    stats[oid][mid].setdefault("total_shared_time", 0)
+    stats[mid][oid].setdefault(
+        "total_shared_time", stats[oid][mid]["total_shared_time"]
+    )
+
+    # Incrementa contador de llamadas iniciadas por el usuario que entra
+    stats[oid][mid][calls_key] += 1
+
+    # Guardar cambios en el JSON
     stats_path, _ = _get_paths(member)
     save_json(stats, stats_path)
 
 
-########################################
-# tiempo
-########################################
+# ======================== #
+#   MANEJO DE TIEMPO VC    #
+# ======================== #
 def save_time(time_entries, member, channel_member, enter=True):
+    """Registra el inicio o fin de una sesión compartida entre dos usuarios."""
+    import datetime
+
     current_time = datetime.datetime.now().isoformat()
 
     def ensure_entry(a, b):
@@ -146,7 +143,7 @@ def calculate_total_time(time_entries, stats, member, channel_member):
 
 
 ########################################
-# Depressive attempts — lo dejo igual
+# Depressive attempts
 ########################################
 def check_depressive_attempts(
     member, is_depressed, stats, recorded_attempts, time_entries=None
@@ -217,22 +214,32 @@ def check_depressive_attempts(
     )
 
 
-########################################
-# canal histórico
-########################################
+# ======================== #
+#      HISTORIAL CANAL     #
+# ======================== #
 def update_channel_history(historiales_por_canal, channel_id, cambio):
+    """
+    Actualiza el historial de miembros de un canal de voz.
+
+    Parámetros:
+    - historiales_por_canal: dict[int, list[int]]
+        Diccionario que guarda por cada canal una lista con la cantidad
+        de miembros a lo largo del tiempo.
+    - channel_id: int
+        ID del canal que se va a actualizar.
+    - cambio: int
+        +1 si un miembro entra, -1 si un miembro sale.
+    """
     historiales_por_canal.setdefault(channel_id, [0])
     historiales_por_canal[channel_id].append(
         historiales_por_canal[channel_id][-1] + cambio
     )
 
 
-########################################
-# timer VC
-########################################
-async def timer_task(
-    member, is_depressed, timers, timeout=150, stats=None, time_entries=None
-):
+# ======================== #
+#       TEMPORIZADOR       #
+# ======================== #
+async def timer_task(member, is_depressed, timers, timeout=150, time_entries=None):
     """
     Marca un usuario como deprimido si permanece solo demasiado tiempo.
     Si se pasa time_entries, guarda en fechas.json (time_entries) la marca de solo_start.
@@ -283,30 +290,32 @@ async def timer_task(
 async def update_json_file(bot, interaction, filename, global_vars: dict, timeout=60.0):
     """
     Espera a que el usuario envíe un archivo JSON y lo actualiza.
-    Acepta el archivo en el mismo canal donde se ejecutó el comando o por DM.
+    Solo se permite `stats.json`.
     """
+    if filename != "stats.json":
+        await interaction.response.send_message(
+            "Solo se puede actualizar `stats.json`. Asegúrate de enviar el archivo con ese nombre.",
+            ephemeral=True,
+        )
+        return False
+
     user = interaction.user
     origin_channel = interaction.channel
 
     # Aseguramos que exista un canal DM del usuario
-    dm_channel = user.dm_channel
-    if dm_channel is None:
-        dm_channel = await user.create_dm()
+    dm_channel = user.dm_channel or await user.create_dm()
 
-    # Hacemos visible la instrucción en el canal (no ephemeral) para que el usuario la vea
     try:
         await interaction.followup.send(
-            f"Por favor, envía, `{filename}` **en este canal** o **por DM**. Tienes {timeout} segundos.",
+            f"Por favor, envía `{filename}` **en este canal** o **por DM**. Tienes {timeout} segundos.",
             ephemeral=False,
         )
     except Exception:
-        # Si followup falla por alguna razón, intentamos enviar por DM
         await user.send(
             f"Por favor, envía `{filename}` por DM al bot. Tienes {timeout} segundos."
         )
 
     def check(message):
-        # Aceptamos si: mismo autor, tiene attachments con .json y viene del canal original o del DM
         try:
             is_author = message.author == user
             has_attachment = bool(message.attachments)
@@ -324,57 +333,34 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         except Exception:
             return False
 
-    print(
-        f"[DEBUG] Esperando {filename} de {user} en canal {origin_channel} o DM {dm_channel}"
-    )
-
     try:
         message = await bot.wait_for("message", check=check, timeout=timeout)
         attachment = message.attachments[0]
 
-        # Guardamos con nombre temporal para evitar colisiones
         tmp_name = f"tmp_{user.id}_{attachment.filename}"
         await attachment.save(tmp_name)
         print(f"[DEBUG] Archivo guardado temporalmente como {tmp_name}")
 
-        # Leemos el JSON
         with open(tmp_name, "r", encoding="utf-8") as f:
             new_data = json.load(f)
 
-        # Actualizamos la variable global (se asume que global_vars contiene la referencia)
-        if filename in global_vars:
-            target_obj = global_vars[filename]
-            # Intentamos actualizar in-place si es mutable
-            if isinstance(target_obj, dict):
-                target_obj.clear()
-                target_obj.update(new_data)
-            elif isinstance(target_obj, list):
-                target_obj.clear()
-                target_obj.extend(new_data)
-            else:
-                # Si no es mutable, reemplazamos la entrada en el dict global_vars
-                global_vars[filename] = new_data
-
-        # Guardamos en disco usando tu save_json (guardará en la ruta que uses internamente)
-        # Aquí construimos la ruta por servidor (igual que en tu _get_paths)
-        guild = interaction.guild
-        if guild:
-            write_path = os.path.join(str(guild.id), filename)
+        # Solo actualizamos stats.json
+        stats_obj = global_vars.get("stats.json")
+        if isinstance(stats_obj, dict):
+            stats_obj.clear()
+            stats_obj.update(new_data)
         else:
-            # fallback: guardamos en raíz si no hay guild (p. ej. DM)
-            write_path = filename
+            global_vars["stats.json"] = new_data
 
-        # Asegúrate de que el directorio exista
+        guild = interaction.guild
+        write_path = os.path.join(str(guild.id), filename) if guild else filename
         os.makedirs(os.path.dirname(write_path) or ".", exist_ok=True)
-
         save_json(new_data, write_path)
         print(f"[DEBUG] JSON guardado en {write_path}")
 
         await interaction.followup.send(
             f"`{filename}` actualizado correctamente.", ephemeral=False
         )
-
-        # limpiar
         os.remove(tmp_name)
         return True
 
@@ -390,7 +376,6 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
             f"Ocurrió un error con `{filename}`: {e}", ephemeral=True
         )
         print(f"[ERROR] Error procesando {filename}: {e}", exc_info=True)
-        # intentar limpiar archivo temporal si existe
         try:
             if tmp_name and os.path.exists(tmp_name):
                 os.remove(tmp_name)
