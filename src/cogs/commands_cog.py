@@ -263,7 +263,7 @@ class CommandsCog(commands.Cog):
             return
 
         await interaction.response.send_message(
-            "Iniciando actualización de `stats.json`. Tienes 60 segundos para enviar el archivo actualizado.",
+            "Iniciando actualización de stats.json. Tienes 60 segundos para enviar el archivo actualizado.",
             ephemeral=True,
         )
 

@@ -1,88 +1,31 @@
-# bot/main.py
-import os, sys, subprocess, socket, time, asyncio, traceback, atexit
+import os, asyncio
 from dotenv import load_dotenv
 import discord
 from discord.ext import commands
-from webserver import app
+from fastapi import FastAPI
+import uvicorn
 
 load_dotenv()
 
 PORT = int(os.getenv("PORT", 8000))
 HOST = "0.0.0.0"
 
-
-def start_uvicorn_as_subprocess():
-    cmd = [
-        sys.executable,
-        "-m",
-        "uvicorn",
-        "webserver:app",
-        "--host",
-        HOST,
-        "--port",
-        str(PORT),
-        "--log-level",
-        "info",
-    ]
-    print(f"[STARTUP] Lanzando uvicorn subprocess: {' '.join(cmd)}")
-    try:
-        return subprocess.Popen(cmd)
-    except Exception as e:
-        print(f"[STARTUP][ERROR] fallo al lanzar uvicorn subprocess: {e}")
-        traceback.print_exc()
-        return None
+# --- FastAPI ---
+app = FastAPI()
 
 
-def wait_for_port(port: int, timeout: float = 60.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1):
-                print(f"[STARTUP] Conexión a 127.0.0.1:{port} establecida.")
-                return True
-        except:
-            time.sleep(0.5)
-    print(f"[STARTUP][TIMEOUT] No se pudo conectar a 127.0.0.1:{port} en {timeout}s.")
-    return False
+@app.get("/")
+async def root():
+    return {"status": "ok"}  # Koyeb ya no fallará al ping
 
 
-def safe_terminate_process(proc):
-    if proc is None:
-        return
-    try:
-        if proc.poll() is None:
-            print("[SHUTDOWN] Terminando proceso uvicorn...")
-            proc.terminate()
-            time.sleep(2)
-            if proc.poll() is None:
-                print("[SHUTDOWN] Forzando kill al proceso uvicorn...")
-                proc.kill()
-    except Exception as e:
-        print(f"[SHUTDOWN][ERROR] al terminar proceso uvicorn: {e}")
-
-
-# 1) arrancar uvicorn
-uvicorn_proc = start_uvicorn_as_subprocess()
-atexit.register(lambda: safe_terminate_process(uvicorn_proc))
-server_ready = wait_for_port(PORT, timeout=60.0)
-if not server_ready:
-    print(
-        "[STARTUP][WARNING] FastAPI no respondió a tiempo; Koyeb puede marcar health check failed."
-    )
-else:
-    print("[STARTUP] FastAPI lista.")
-
-
-# 2) configurar bot
+# --- Discord ---
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="/", intents=intents)
 
 
 @bot.event
 async def setup_hook():
-    # restaurar JSON local desde API una sola vez
-
-    # cargar cogs aquí
     await bot.load_extension("src.cogs.voice_cog")
     await bot.load_extension("src.cogs.commands_cog")
     await bot.load_extension("src.cogs.misc_cog")
@@ -91,36 +34,32 @@ async def setup_hook():
 
 @bot.event
 async def on_ready():
-    print(f"\n✓ Bot conectado como {bot.user}")
-    print(f"✓ ID: {bot.user.id}")
-    print(f"✓ Servidores: {len(bot.guilds)}")
+    print(
+        f"Bot conectado como {bot.user} ({bot.user.id}). Servidores: {len(bot.guilds)}"
+    )
     try:
         cmds = await bot.tree.sync()
-        print(
-            f"✓ {len(cmds)} comandos sincronizados: {', '.join([c.name for c in cmds])}."
-        )
+        print(f"{len(cmds)} comandos sincronizados: {[cmd.name for cmd in cmds]}")
     except Exception as e:
-        print(f"✗ Error sincronizando comandos: {e}")
+        print(f"Error sincronizando comandos: {e}")
     print(f"\n{'='*50}")
-    print(f"🤖 JoinTracker está listo y funcionando!")
+    print(f"¡JoinTracker listo y funcionando!")
     print(f"{'='*50}\n")
 
 
+# --- Función principal ---
 async def main():
-    async with bot:
-        token = os.getenv("TOKEN")
-        if not token:
-            print("ERROR: No se encontró TOKEN.")
-            return
-        try:
-            await bot.start(token)
-        finally:
-            safe_terminate_process(uvicorn_proc)
+    token = os.getenv("TOKEN")
+    if not token:
+        print("ERROR: No se encontró TOKEN.")
+        return
+
+    # Lanzar bot y servidor FastAPI juntos
+    config = uvicorn.Config(app, host=HOST, port=PORT, log_level="info")
+    server = uvicorn.Server(config)
+
+    await asyncio.gather(bot.start(token), server.serve())
 
 
 if __name__ == "__main__":
-    print("Iniciando bot...")
-    try:
-        asyncio.run(main())
-    finally:
-        safe_terminate_process(uvicorn_proc)
+    asyncio.run(main())
