@@ -93,6 +93,7 @@ def check_depressive_attempts(
     solo_secs = 0.0
 
     # Intentamos leer marcador desde time_entries (fechas.json) en la clave especial "_solo"
+    # TODO
     if time_entries is not None:
         solo_container = time_entries.get("_solo", {})
         solo = solo_container.get(mid)
@@ -304,12 +305,13 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
 
     try:
         await interaction.followup.send(
-            f"Por favor, envía `{filename}` **en este canal** o **por DM**. Tienes {timeout} segundos.",
-            ephemeral=False,
+            f"Por favor, envía stats.json **en este canal** o **por DM**. Tienes {timeout} segundos.",
+            ephemeral=True,
         )
     except Exception:
         await user.send(
-            f"Por favor, envía `{filename}` por DM al bot. Tienes {timeout} segundos."
+            f"Por favor, envía `stats.json` **por DM** al bot. Tienes {timeout} segundos.",
+            ephemeral=True,
         )
 
     def check(message):

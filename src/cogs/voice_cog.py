@@ -102,7 +102,7 @@ class VoiceCog(commands.Cog):
 
         for m in before.channel.members:
             if m != member:
-                save_time(time_entries, member, m, True)
+                save_time(time_entries, member, m, False)
                 print("Se ha guardado tiempo de llamada al unirse.")
                 calculate_total_time(time_entries, stats, member, m)
 
@@ -129,7 +129,6 @@ class VoiceCog(commands.Cog):
 
         else:
             # Si el canal origen queda con 1 persona, iniciar temporizador para esa persona
-            print("[DEBUG] Canal destino queda solo con el usuario.")
             self.start_timer(member, stats, time_entries)
             for m in before.channel.members:
                 if m != member:

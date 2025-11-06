@@ -241,6 +241,11 @@ class CommandsCog(commands.Cog):
                 "Te envío los archivos por privado.", ephemeral=True
             )
             try:
+                import datetime
+
+                await interaction.user.send(
+                    f"Aquí tienes los archivos de datos del servidor, a fecha de {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:"
+                )
                 await user.send(files=files)
             except discord.Forbidden:
                 await interaction.followup.send(
@@ -263,18 +268,13 @@ class CommandsCog(commands.Cog):
             )
             return
 
-        await interaction.response.send_message(
-            "Iniciando actualización de stats.json. Tienes 60 segundos para enviar el archivo actualizado.",
-            ephemeral=True,
-        )
-
         # Diccionario con la variable a actualizar
         global_vars = {"stats.json": self.call_data}
 
         await update_json_file(self.bot, interaction, "stats.json", global_vars)
 
         await interaction.followup.send(
-            "Actualización de `stats.json` finalizada.", ephemeral=True
+            "Actualización de base de datos local finalizada.", ephemeral=True
         )
 
 
