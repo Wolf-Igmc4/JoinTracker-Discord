@@ -4,12 +4,13 @@ from discord.ext import commands
 from src.utils.json_manager import load_json
 from src.utils.helpers import update_json_file
 import os
+from config import RAIZ_PROYECTO
 
 
 class CommandsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
+        self.data_dir = RAIZ_PROYECTO / "data"
 
         # Inicializamos los JSONs vacíos (para update_json)
         self.call_data = {}
