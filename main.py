@@ -14,9 +14,15 @@ HOST = "0.0.0.0"
 app = FastAPI()
 
 
+# Control de salud del servidor
 @app.get("/")
 async def root():
-    return {"status": "ok"}  # Koyeb ya no fallará al ping
+    return {"status": "ok"}
+
+
+@app.head("/")
+async def root_head():
+    return {"status": "ok"}
 
 
 # --- Discord ---
