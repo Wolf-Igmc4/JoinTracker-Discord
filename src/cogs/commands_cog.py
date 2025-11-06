@@ -4,7 +4,7 @@ from discord.ext import commands
 from src.utils.json_manager import load_json
 from src.utils.helpers import update_json_file
 import os
-from config import RAIZ_PROYECTO
+from src.config import RAIZ_PROYECTO
 
 
 class CommandsCog(commands.Cog):
