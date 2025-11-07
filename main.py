@@ -23,7 +23,7 @@ if not TOKEN:
 
 
 # ---------------- FastAPI ----------------
-# Importa tu FastAPI completa con endpoints de webserver.py
+# Importar FastAPI completa con endpoints de webserver.py
 
 
 # Control de salud del servidor
@@ -73,7 +73,7 @@ async def restore_stats_per_guild():
                     data = await r.json()
 
                     if isinstance(data, dict) and "error" not in data:
-                        # Vuelve a sanear los datos recibidos
+                        # Se sanearán los datos recibidos
                         safe_data_local = stringify_keys(data)
 
                         with stats_path.open("w", encoding="utf-8") as f:
@@ -88,7 +88,7 @@ async def restore_stats_per_guild():
 
 @bot.event
 async def setup_hook():
-    # Carga todos los cogs
+    # Cargar todos los cogs
     await bot.load_extension("src.cogs.voice_cog")
     await bot.load_extension("src.cogs.commands_cog")
     await bot.load_extension("src.cogs.misc_cog")

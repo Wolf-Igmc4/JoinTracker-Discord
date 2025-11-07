@@ -383,7 +383,7 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
 
     try:
         await dm_channel.send(
-            f"Por favor, envía **stats.json** en este canal. Tienes {timeout} segundos."
+            f"Por favor, envía el archivo `{filename}` aquí. Tienes {timeout} segundos."
         )
         await interaction.followup.send(
             f"Te he enviado un DM para que puedas subir `{filename}`.", ephemeral=True
@@ -450,6 +450,7 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         return True
 
     except asyncio.TimeoutError:
+        await user.send(f"Tiempo de espera agotado para enviar `{filename}`.")
         await interaction.followup.send(
             f"Tiempo de espera agotado para `{filename}`.", ephemeral=False
         )

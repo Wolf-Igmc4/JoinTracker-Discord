@@ -5,8 +5,6 @@ from discord.ext import commands, tasks
 from discord import app_commands, Interaction
 from pathlib import Path
 from typing import Callable, Awaitable
-import os
-
 from src.config import RAIZ_PROYECTO
 from src.utils.json_manager import load_json
 from src.utils.helpers import send_to_fastapi
