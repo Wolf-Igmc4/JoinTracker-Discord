@@ -61,8 +61,6 @@ class Payload(BaseModel):
 # ---------------- Endpoints ----------------
 @app.post("/save-json")
 async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
-    print(f"[DEBUG][SERVER] Clave Recibida: {x_api_key}")
-    print(f"[DEBUG][SERVER] Clave Esperada: {API_KEY}")
     if API_KEY is None or x_api_key != API_KEY:
         print("Las claves no coinciden.")
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -99,16 +97,10 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
 @app.get("/stats/{guild_id}")
 async def get_guild_stats(guild_id: str, x_api_key: str = Header(None)):
     """
-    Devuelve el último JSON guardado para la guild indicada.
+    Devuelve el último JSON guardado para el servidor indicado.
     Protegido por API key (x-api-key).
     """
     if API_KEY is None or x_api_key != API_KEY:
-        print(
-            "[DEBUG][SERVER] Clave NO AUTORIZADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA."
-        )
-        print(
-            f"[DEBUG][SERVER] API_KEY: {API_KEY[:4]} VS CLAVE RECIBIDA: {x_api_key[:4]}..."
-        )
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     session = SessionLocal()
@@ -121,6 +113,6 @@ async def get_guild_stats(guild_id: str, x_api_key: str = Header(None)):
         )
         if record:
             return JSONResponse(content=record.data)
-        return {"error": "no hay datos guardados aún para esta guild"}
+        return {"error": "No hay datos guardados aún para este servidor."}
     finally:
         session.close()

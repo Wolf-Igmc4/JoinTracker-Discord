@@ -107,7 +107,7 @@ async def on_ready():
         print(f"Error sincronizando comandos: {e}")
 
     print(f"\n{'='*50}")
-    print(f"\t  ✅ JoinTracker operativo")
+    print(f"\t\t\t✅ JoinTracker operativo")
     print(f"{'='*50}\n")
 
     # Lanzar restauración en background (no bloqueante)

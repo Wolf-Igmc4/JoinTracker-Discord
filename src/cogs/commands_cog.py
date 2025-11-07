@@ -81,7 +81,7 @@ class CommandsCog(commands.Cog):
 
     # ====== Slash Commands ====== #
     @app_commands.command(
-        name="call_stats",
+        name="datos_llamada",
         description="Devuelve las veces y el tiempo total que un usuario ha estado en llamada con otro.",
     )
     async def call_stats(
@@ -127,7 +127,7 @@ class CommandsCog(commands.Cog):
         await interaction.response.send_message(msg)
 
     @app_commands.command(
-        name="all_call_stats",
+        name="datos_totales_llamada",
         description="Muestra estadísticas completas de llamadas de un usuario con tiempos totales.",
     )
     async def all_call_stats(
@@ -233,10 +233,10 @@ class CommandsCog(commands.Cog):
         await interaction.followup.send(msg)
 
     @app_commands.command(
-        name="send_json",
+        name="descargar_json",
         description="Envía los archivos stats.json y fechas.json del servidor (solo admin).",
     )
-    async def send_json(self, interaction: discord.Interaction):
+    async def download_json(self, interaction: discord.Interaction):
         user = interaction.user
         guild = interaction.guild
 
@@ -277,7 +277,7 @@ class CommandsCog(commands.Cog):
             )
 
     @app_commands.command(
-        name="update_json",
+        name="actualizar_json",
         description="Permite actualizar los archivos de estadísticas del bot en este servidor (solo admin).",
     )
     async def update_json(self, interaction: discord.Interaction):

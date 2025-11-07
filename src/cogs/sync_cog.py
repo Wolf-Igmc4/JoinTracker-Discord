@@ -19,8 +19,10 @@ class SyncCog(commands.Cog):
     @tasks.loop(hours=24)
     async def flush_task(self):
         """Loop automático: cada 24h envía los stats de cada servidor si existen."""
-        print("[SyncCog] Ejecutando flush automático de stats por servidor...")
         for guild in self.bot.guilds:
+            print(
+                f"\033[33m[SyncCog] Ejecutando volcado automático de stats para servidor {guild}...\033[0m"
+            )
             gid = str(guild.id)
             stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
             if stats_path.exists():
@@ -28,7 +30,7 @@ class SyncCog(commands.Cog):
                 send_to_fastapi(call_data, guild_id=gid)
 
     @app_commands.command(
-        name="flush",
+        name="volcado_db",
         description="Envía manualmente las estadísticas locales a la base de datos (solo Anth).",
     )
     async def flush_now(self, interaction: Interaction):

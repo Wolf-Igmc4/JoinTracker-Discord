@@ -92,8 +92,6 @@ def send_to_fastapi(data, guild_id=None):
         print("[DEBUG] Claves no-str detectadas:")
         for path, t in bad:
             print("   ", path, "tipo:", t)
-    else:
-        print("[DEBUG] Todas las claves son str")
 
     payload = {"guild_id": gid, "data": safe_data}
     headers = {}
