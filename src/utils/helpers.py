@@ -12,6 +12,10 @@ load_dotenv()
 API_URL = os.getenv("API_URL")
 API_KEY = os.getenv("API_KEY", None)
 
+# DEBUG temporal para verificar si la clave se cargó:
+print(f"[DEBUG][ENV] API_URL cargada: {bool(API_URL)}")
+print(f"[DEBUG][ENV] API_KEY cargada: {bool(API_KEY)}")
+
 
 def stringify_keys(obj):
     if isinstance(obj, dict):
@@ -24,6 +28,20 @@ def stringify_keys(obj):
         return [stringify_keys(i) for i in obj]
     else:
         return obj
+
+
+# DEBUG: encuentra claves no-str en un dict anidado
+def find_non_str_keys(obj, path="root"):
+    bad = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if not isinstance(k, str):
+                bad.append((path + f"/{repr(k)}", type(k).__name__))
+            bad.extend(find_non_str_keys(v, path + f"/{repr(k)}"))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            bad.extend(find_non_str_keys(v, path + f"[{i}]"))
+    return bad
 
 
 def send_to_fastapi(data, guild_id=None):
@@ -45,6 +63,15 @@ def send_to_fastapi(data, guild_id=None):
         print(
             f"[FastAPI][WARN] Datos para {gid} han sido sanitizados (claves no-str convertidas)."
         )
+
+    # debug: encontrar claves no-str
+    bad = find_non_str_keys(safe_data)
+    if bad:
+        print("[DEBUG] Claves no-str detectadas:")
+        for path, t in bad:
+            print("   ", path, "tipo:", t)
+    else:
+        print("[DEBUG] Todas las claves son str")
 
     payload = {"guild_id": gid, "data": safe_data}
     headers = {}

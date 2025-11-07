@@ -10,6 +10,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from src.utils.helpers import stringify_keys
 
 # ---------------- Cargar variables de entorno ----------------
 load_dotenv()  # carga .env
@@ -61,19 +62,21 @@ class Payload(BaseModel):
 # ---------------- Endpoints ----------------
 @app.post("/save-json")
 async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
+    print(f"[DEBUG][SERVER] Clave Recibida: {x_api_key}")
+    print(f"[DEBUG][SERVER] Clave Esperada: {API_KEY}")
     if API_KEY is None or x_api_key != API_KEY:
+        print("Las claves no coinciden.")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     session = SessionLocal()
     try:
-        print(
-            "[DEBUG][WEB] type(payload.guild_id):",
-            type(payload.guild_id),
-            "guild_id:",
-            payload.guild_id,
-        )
+        safe_data = stringify_keys(payload.data)
+        if safe_data != payload.data:
+            print(
+                f"[WEB][WARN] Sanitizado payload.data para servidor {payload.guild_id} (claves no-str convertidas)."
+            )
 
-        record = JSONData(guild_id=payload.guild_id, data=payload.data)
+        record = JSONData(guild_id=payload.guild_id, data=safe_data)
         session.add(record)
         session.commit()
 
@@ -101,6 +104,12 @@ async def get_guild_stats(guild_id: str, x_api_key: str = Header(None)):
     Protegido por API key (x-api-key).
     """
     if API_KEY is None or x_api_key != API_KEY:
+        print(
+            "[DEBUG][SERVER] Clave NO AUTORIZADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA."
+        )
+        print(
+            f"[DEBUG][SERVER] API_KEY: {API_KEY[:4]} VS CLAVE RECIBIDA: {x_api_key[:4]}..."
+        )
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     session = SessionLocal()

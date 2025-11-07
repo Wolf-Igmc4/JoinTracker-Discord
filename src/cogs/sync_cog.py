@@ -42,7 +42,9 @@ class SyncCog(commands.Cog):
 
             if stats_path.exists():
                 call_data = load_json(f"{gid}/stats.json")
-                print("[DEBUG][FLUSH_TASK] type(gid):", type(gid), "gid:", gid)
+                print(
+                    "Creando copia de seguridad y enviando datos para servidor: ", gid
+                )
                 send_to_fastapi(call_data, guild_id=gid)
 
     # comando slash manual /flush — solo owner puede usarlo

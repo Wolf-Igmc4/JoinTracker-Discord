@@ -9,6 +9,7 @@ from discord.ext import commands
 import uvicorn
 from pathlib import Path
 from src.config import RAIZ_PROYECTO
+from webserver import app
 
 # ---------------- Cargar configuración ----------------
 load_dotenv()
@@ -19,9 +20,21 @@ API_KEY = os.getenv("API_KEY")
 if not TOKEN:
     raise ValueError("No se encontró TOKEN de Discord en el .env")
 
+
 # ---------------- FastAPI ----------------
 # Importa tu FastAPI completa con endpoints de webserver.py
-from webserver import app as web_app
+
+
+# Control de salud del servidor
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
+
+@app.head("/")
+async def root_head():
+    return {"status": "ok"}
+
 
 # ---------------- Discord Bot ----------------
 intents = discord.Intents.all()
@@ -99,7 +112,7 @@ async def on_ready():
 # ---------------- Función principal ----------------
 async def main():
     config = uvicorn.Config(
-        web_app, host="0.0.0.0", port=PORT, log_level="info", loop="asyncio"
+        app, host="0.0.0.0", port=PORT, log_level="info", loop="asyncio"
     )
     server = uvicorn.Server(config)
 

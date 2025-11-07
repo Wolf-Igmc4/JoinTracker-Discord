@@ -246,7 +246,7 @@ class CommandsCog(commands.Cog):
             try:
                 print("[DEBUG] Enviando archivos por DM...")
                 await user.send(
-                    content=f"Aquí tienes los archivos de datos del servidor, a fecha de {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:",
+                    content=f"Aquí tienes los archivos de datos del servidor {guild.name}, a fecha de {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:",
                     files=files,
                 )
 
