@@ -4,3 +4,4 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 requests
+psycopg2
