@@ -17,11 +17,37 @@ print(f"[DEBUG][ENV] API_URL cargada: {bool(API_URL)}")
 print(f"[DEBUG][ENV] API_KEY cargada: {bool(API_KEY)}")
 
 
+# src/utils/helpers.py
+
+
 def stringify_keys(obj):
+    """
+    Recorre recursivamente un objeto (diccionarios y listas) y asegura que
+    todas las claves de los diccionarios sean de tipo 'str'.
+
+    Esta función es esencial para garantizar que los datos sean serializables
+    de forma segura en JSON, especialmente al interactuar entre diferentes
+    sistemas (como una BBDD, un cliente Python y un archivo JSON).
+
+    Maneja casos específicos:
+    - Convierte claves `None` (objeto Python) a "None" (string).
+    - Convierte claves "null" (string) a "None" (string) para evitar
+      la asimetría de deserialización de JSON (donde "null" -> None).
+    - Convierte otras claves no-string (como 'int') a su representación 'str'.
+
+    :param obj: El objeto (dict, list, u otro) a sanear.
+    :return: Una nueva copia del objeto con todas las claves de diccionario
+             convertidas a 'str'.
+    """
     if isinstance(obj, dict):
         new = {}
         for k, v in obj.items():
-            new_key = str(k) if not isinstance(k, str) else k
+            if k is None or k == "null":
+                new_key = "None"
+            elif not isinstance(k, str):
+                new_key = str(k)
+            else:
+                new_key = k
             new[new_key] = stringify_keys(v)
         return new
     elif isinstance(obj, list):
@@ -344,33 +370,30 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
 #    ACTUALIZADOR JSON     #
 # ======================== #
 async def update_json_file(bot, interaction, filename, global_vars: dict, timeout=60.0):
-    """
-    Espera a que el usuario envíe un archivo JSON y lo actualiza.
-    Solo se permite `stats.json`.
-    """
     if filename != "stats.json":
-        await interaction.response.send_message(
-            "Solo se puede actualizar `stats.json`. Asegúrate de enviar el archivo con ese nombre.",
+        await interaction.followup.send(
+            "Por ahora, solo se puede actualizar `stats.json`. Asegúrate de enviar el archivo con ese nombre.",
             ephemeral=True,
         )
         return False
 
     user = interaction.user
     origin_channel = interaction.channel
-
-    # Aseguramos que exista un canal DM del usuario
     dm_channel = user.dm_channel or await user.create_dm()
 
     try:
+        await dm_channel.send(
+            f"Por favor, envía **stats.json** en este canal. Tienes {timeout} segundos."
+        )
         await interaction.followup.send(
-            f"Por favor, envía stats.json **en este canal** o **por DM**. Tienes {timeout} segundos.",
-            ephemeral=True,
+            f"Te he enviado un DM para que puedas subir `{filename}`.", ephemeral=True
         )
     except Exception:
-        await user.send(
-            f"Por favor, envía stats.json **por DM** al bot. Tienes {timeout} segundos.",
+        await interaction.followup.send(
+            "No pude enviarte un DM. Por favor, revisa tu configuración de mensajes directos.",
             ephemeral=True,
         )
+        return False
 
     def check(message):
         try:
@@ -390,18 +413,17 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         except Exception:
             return False
 
+    tmp_name = None
     try:
         message = await bot.wait_for("message", check=check, timeout=timeout)
         attachment = message.attachments[0]
 
         tmp_name = f"tmp_{user.id}_{attachment.filename}"
         await attachment.save(tmp_name)
-        print(f"[DEBUG] Archivo guardado temporalmente como {tmp_name}")
 
         with open(tmp_name, "r", encoding="utf-8") as f:
             new_data = json.load(f)
 
-        # Solo actualizamos stats.json
         stats_obj = global_vars.get("stats.json")
         if isinstance(stats_obj, dict):
             stats_obj.clear()
@@ -413,11 +435,17 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         write_path = os.path.join(str(guild.id), filename) if guild else filename
         os.makedirs(os.path.dirname(write_path) or ".", exist_ok=True)
         save_json(new_data, write_path)
-        print(f"[DEBUG] JSON guardado en {write_path}")
 
-        await interaction.followup.send(
-            f"`{filename}` actualizado correctamente.", ephemeral=False
-        )
+        try:
+            await user.send(
+                f"`{filename}` actualizado correctamente. Comprueba el canal donde se envió el comando."
+            )
+        except Exception:
+            # Si falla, enviamos fallback al canal del servidor
+            await interaction.followup.send(
+                f"`{filename}` actualizado correctamente, pero no pude enviarte un DM.",
+                ephemeral=True,
+            )
         os.remove(tmp_name)
         return True
 
@@ -425,17 +453,12 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         await interaction.followup.send(
             f"Tiempo de espera agotado para `{filename}`.", ephemeral=False
         )
-        print(f"[DEBUG] Timeout esperando {filename} de {user}")
         return False
 
     except Exception as e:
         await interaction.followup.send(
             f"Ocurrió un error con `{filename}`: {e}", ephemeral=True
         )
-        print(f"[ERROR] Error procesando {filename}: {e}", exc_info=True)
-        try:
-            if tmp_name and os.path.exists(tmp_name):
-                os.remove(tmp_name)
-        except Exception:
-            pass
+        if tmp_name and os.path.exists(tmp_name):
+            os.remove(tmp_name)
         return False

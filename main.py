@@ -7,9 +7,10 @@ from dotenv import load_dotenv
 import discord
 from discord.ext import commands
 import uvicorn
-from pathlib import Path
 from src.config import RAIZ_PROYECTO
 from webserver import app
+from src.utils.helpers import stringify_keys
+import aiohttp
 
 # ---------------- Cargar configuración ----------------
 load_dotenv()
@@ -43,10 +44,9 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 
 async def restore_stats_per_guild():
     """
-    Al arrancar, intenta recuperar stats por cada guild desde /stats/{guild_id}.
+    Al arrancar, intenta recuperar stats por cada guild desde /stats/{gid}.
+    Además, sanea los datos recibidos para evitar problemas con claves no string.
     """
-    import aiohttp
-
     async with aiohttp.ClientSession() as session:
         for guild in bot.guilds:
             gid = str(guild.id)
@@ -69,10 +69,16 @@ async def restore_stats_per_guild():
                                 f"[INIT] servidor {gid}: error inesperado (ERROR {r.status})."
                             )
                         continue
+
                     data = await r.json()
+
                     if isinstance(data, dict) and "error" not in data:
+                        # Vuelve a sanear los datos recibidos
+                        safe_data_local = stringify_keys(data)
+
                         with stats_path.open("w", encoding="utf-8") as f:
-                            json.dump(data, f, indent=2)
+                            json.dump(safe_data_local, f, indent=2)
+
                         print(f"[INIT] stats.json restaurado para servidor {gid}")
                     else:
                         print(f"[INIT] no hay datos para servidor {gid}")
@@ -82,7 +88,7 @@ async def restore_stats_per_guild():
 
 @bot.event
 async def setup_hook():
-    # Carga todos tus cogs (incluyendo SyncCog con flush)
+    # Carga todos los cogs
     await bot.load_extension("src.cogs.voice_cog")
     await bot.load_extension("src.cogs.commands_cog")
     await bot.load_extension("src.cogs.misc_cog")

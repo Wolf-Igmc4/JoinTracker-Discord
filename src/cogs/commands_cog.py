@@ -244,7 +244,7 @@ class CommandsCog(commands.Cog):
                 "Te envío los archivos por privado.", ephemeral=True
             )
             try:
-                print("[DEBUG] Enviando archivos por DM...")
+                print(f"[DEBUG] Enviando archivos por DM a {user.display_name}...")
                 await user.send(
                     content=f"Aquí tienes los archivos de datos del servidor {guild.name}, a fecha de {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:",
                     files=files,
@@ -272,10 +272,13 @@ class CommandsCog(commands.Cog):
             )
             return
 
-        # Diccionario con la variable a actualizar
+        # Indicamos que vamos a procesar la interacción y tardará un poco
+        await interaction.response.defer(ephemeral=True)
+
         global_vars = {"stats.json": self.call_data}
 
-        await update_json_file(self.bot, interaction, "stats.json", global_vars)
+        for filename in ["stats.json", "fechas.json"]:
+            await update_json_file(self.bot, interaction, filename, global_vars)
 
         await interaction.followup.send(
             "Actualización de base de datos local finalizada.", ephemeral=True
