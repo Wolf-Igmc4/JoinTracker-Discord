@@ -1,34 +1,54 @@
-# bot/utils/helpers.py
+# src/utils/helpers.py
 import asyncio
 from .json_manager import save_json
 import os, json
 import requests
+from dotenv import load_dotenv
+import os
+
 
 # ---------------- Configuración FastAPI ----------------
-API_URL = os.getenv("PUBLIC_API_BASE")
+load_dotenv()
+API_URL = os.getenv("API_URL")
 API_KEY = os.getenv("API_KEY", None)
 
 
-def _send_to_fastapi(data, guild_id=None):
+def send_to_fastapi(data, guild_id=None):
     """
-    Envía datos a FastAPI incluyendo guild_id.
-    guild_id es opcional: si no se proporciona se usa 'default'.
-    No reemplaza el guardado local.
+    Envía data a FastAPI por guild_id.
+    Se usa el endpoint POST /save-json con payload {"guild_id","data"}.
+    Imprime información de debug (status + body) para depuración.
     """
     gid = str(guild_id) if guild_id is not None else "default"
-    payload = {"guild_id": gid, "data": data}
+
+    # Usa API_URL como nombre estándar (asegúrate de tener esta env var)
+    if not API_URL:
+        print(
+            f"[FastAPI][ERROR] API_URL no configurada. No se puede enviar datos para {gid}."
+        )
+        return
+
     headers = {}
     if API_KEY:
         headers["x-api-key"] = API_KEY
 
-    endpoint = f"{API_URL}/save-json"
+    endpoint = f"{API_URL.rstrip('/')}/save-json"
+
+    payload = {"guild_id": gid, "data": data}
 
     try:
-        resp = requests.post(endpoint, json=payload, headers=headers, timeout=6)
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=10)
+        # debug info
+        print(f"[FastAPI][DEBUG] POST {endpoint} -> status {resp.status_code}")
+        try:
+            print(f"[FastAPI][DEBUG] response body: {resp.text}")
+        except Exception:
+            pass
+
         resp.raise_for_status()
-        print(f"[FastAPI] Datos enviados para guild {gid}.")
+        print(f"[FastAPI] Datos enviados para servidor {gid}.")
     except Exception as e:
-        print(f"[FastAPI] Excepción al enviar datos para guild {gid}: {e}")
+        print(f"[FastAPI] Excepción al enviar datos para servidor {gid}: {e}")
 
 
 def _get_paths(member):
@@ -42,24 +62,23 @@ def _get_paths(member):
 # ============================== #
 def handle_call_data(stats, member, channel_member):
     """Actualiza las estadísticas de llamadas entre dos usuarios."""
-    mid = str(member.id)
-    oid = str(channel_member.id)
+    joiner_id = str(member.id)  # ID del que entra
+    existing_id = str(channel_member.id)  # ID del que ya estaba
 
     # Garantiza que existan las estructuras necesarias
-    stats.setdefault(oid, {})
-    stats.setdefault(mid, {})
-    stats[oid].setdefault(mid, {})
-    stats[mid].setdefault(oid, {})
+    stats.setdefault(existing_id, {})
+    stats.setdefault(joiner_id, {})
+    stats[existing_id].setdefault(joiner_id, {})
+    stats[joiner_id].setdefault(existing_id, {})
 
-    calls_key = f"calls_started_by_{mid}"
-    stats[oid][mid].setdefault(calls_key, 0)
-    stats[oid][mid].setdefault("total_shared_time", 0)
-    stats[mid][oid].setdefault(
-        "total_shared_time", stats[oid][mid]["total_shared_time"]
+    stats[existing_id][joiner_id].setdefault("calls_started", 0)
+    stats[existing_id][joiner_id].setdefault("total_shared_time", 0)
+    stats[joiner_id][existing_id].setdefault(
+        "total_shared_time", stats[existing_id][joiner_id]["total_shared_time"]
     )
 
     # Incrementa contador de llamadas iniciadas por el usuario que entra
-    stats[oid][mid][calls_key] += 1
+    stats[existing_id][joiner_id]["calls_started"] += 1
 
     # Guardar cambios en el JSON
     stats_path, _ = _get_paths(member)
@@ -171,7 +190,8 @@ def save_time(time_entries, member, channel_member, enter=True):
 
 
 def calculate_total_time(time_entries, stats, member, channel_member):
-    """Recalcula el tiempo total compartido entre dos usuarios."""
+    """Recalcula el tiempo total compartido entre dos usuarios.
+    Se mantiene reciprocidad en stats."""
 
     from datetime import datetime
 
@@ -198,7 +218,7 @@ def calculate_total_time(time_entries, stats, member, channel_member):
     total = prev_total + new_total
 
     stats[mid][oid]["total_shared_time"] = total
-    stats[oid][mid]["total_shared_time"] = total  # recíproco
+    stats[oid][mid]["total_shared_time"] = total
 
     # limpiar histórico ya consolidado
     time_entries[mid][oid]["entries"] = []
@@ -310,7 +330,7 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         )
     except Exception:
         await user.send(
-            f"Por favor, envía `stats.json` **por DM** al bot. Tienes {timeout} segundos.",
+            f"Por favor, envía stats.json **por DM** al bot. Tienes {timeout} segundos.",
             ephemeral=True,
         )
 

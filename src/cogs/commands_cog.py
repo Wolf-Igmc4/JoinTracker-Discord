@@ -1,9 +1,11 @@
+from importlib.resources import files
 import discord
 from discord import app_commands
 from discord.ext import commands
 from src.utils.json_manager import load_json
 from src.utils.helpers import update_json_file
 import os
+from datetime import datetime
 from src.config import RAIZ_PROYECTO
 
 
@@ -39,12 +41,12 @@ class CommandsCog(commands.Cog):
 
         # llamadas a->b
         if isinstance(val_ab, dict):
-            calls_ab = val_ab.get(f"calls_started_by_{b}", 0)
+            calls_ab = val_ab.get(f"calls_started", 0)
             seconds_ab = val_ab.get("total_shared_time", 0) or 0
 
         # llamadas b->a
         if isinstance(val_ba, dict):
-            calls_ba = val_ba.get(f"calls_started_by_{a}", 0)
+            calls_ba = val_ba.get(f"calls_started", 0)
             seconds_ba = val_ba.get("total_shared_time", 0) or 0
 
         total_calls = calls_ab + calls_ba
@@ -151,11 +153,12 @@ class CommandsCog(commands.Cog):
 
         # ==== Estadísticas generales (intentos depresivos) ====
         if appears_as_target:
-            intentos = call_data[mid].get("intentos_depresivos", 0)
+            intentos_depresivos = call_data[mid].get("intentos_depresivos", 0)
             depressive_time = call_data[mid].get("depressive_time", 0)
             msg += f"🔹 **Estadísticas generales**\n"
-            msg += f"   • Intentos depresivos: {intentos}. Ha estado llorando descosoladamente {self.fmt_time(depressive_time)}.\n"
-
+            if intentos_depresivos:
+                msg += f"   • Intentos depresivos: {intentos_depresivos}. Ha estado llorando desconsoladamente {self.fmt_time(depressive_time)}.\n"
+            msg += "\n   **Veces y tiempo total compartido con otros usuarios:**\n"
             # ==== Veces totales que se unieron los dos usuarios y el tiempo total ====
             for uid, val in call_data[mid].items():
                 if uid in ["intentos_depresivos", "depressive_time"]:
@@ -241,13 +244,14 @@ class CommandsCog(commands.Cog):
                 "Te envío los archivos por privado.", ephemeral=True
             )
             try:
-                import datetime
-
-                await interaction.user.send(
-                    f"Aquí tienes los archivos de datos del servidor, a fecha de {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:"
+                print("[DEBUG] Enviando archivos por DM...")
+                await user.send(
+                    content=f"Aquí tienes los archivos de datos del servidor, a fecha de {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:",
+                    files=files,
                 )
-                await user.send(files=files)
+
             except discord.Forbidden:
+                print("[ERROR] No pude enviar los archivos por DM (Forbidden).")
                 await interaction.followup.send(
                     "No pude enviarte los archivos por DM.", ephemeral=True
                 )
