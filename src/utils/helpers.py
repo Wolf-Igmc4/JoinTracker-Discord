@@ -12,10 +12,6 @@ load_dotenv()
 API_URL = os.getenv("API_URL")
 API_KEY = os.getenv("API_KEY", None)
 
-# DEBUG temporal para verificar si la clave se cargó:
-print(f"[DEBUG][ENV] API_URL cargada: {bool(API_URL)}")
-print(f"[DEBUG][ENV] API_KEY cargada: {bool(API_KEY)}")
-
 
 # src/utils/helpers.py
 

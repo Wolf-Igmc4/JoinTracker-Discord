@@ -107,11 +107,11 @@ async def on_ready():
         print(f"Error sincronizando comandos: {e}")
 
     print(f"\n{'='*50}")
-    print(f"¡JoinTracker listo y funcionando!")
+    print(f"\t  ✅ JoinTracker operativo")
     print(f"{'='*50}\n")
 
     # Lanzar restauración en background (no bloqueante)
-    print("Iniciando restauración de stats por servidor...")
+    print("Restaurando stats.json por servidor...")
     bot.loop.create_task(restore_stats_per_guild())
 
 

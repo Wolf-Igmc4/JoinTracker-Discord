@@ -103,7 +103,6 @@ class VoiceCog(commands.Cog):
         for m in before.channel.members:
             if m != member:
                 save_time(time_entries, member, m, False)
-                print("Se ha guardado tiempo de llamada al unirse.")
                 calculate_total_time(time_entries, stats, member, m)
 
     async def member_moved(self, member, before, after):

@@ -110,8 +110,8 @@ class CommandsCog(commands.Cog):
             )
             return
         # === Datos de veces que se unieron ===
-        calls_user1_to_user2 = stats["calls_ab"]
-        calls_user2_to_user1 = stats["calls_ba"]
+        calls_user1_to_user2 = stats["calls_ba"]
+        calls_user2_to_user1 = stats["calls_ab"]
 
         # === Datos de tiempo en llamada ===
         total_seconds = stats["total_seconds"]
@@ -133,6 +133,8 @@ class CommandsCog(commands.Cog):
     async def all_call_stats(
         self, interaction: discord.Interaction, member: discord.Member = None
     ):
+        await interaction.response.defer()  # Da más tiempo al bot
+
         guild = interaction.guild
         call_data = load_json(f"{guild.id}/stats.json")
 
@@ -143,27 +145,47 @@ class CommandsCog(commands.Cog):
         appears_as_source = any(mid in inner for inner in call_data.values())
 
         if not (appears_as_target or appears_as_source):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"No hay datos de llamadas para **{member.display_name}**."
             )
             return
 
-        msg = f"📊 **Estadísticas de llamadas de {member.display_name}:**\n\n"
+        msg = f"📊 **Estadísticas de llamadas de {member.display_name}:**\n"
 
-        # ==== Estadísticas generales (intentos depresivos) ====
+        # ====== Preparar usuarios a procesar ======
+        uids_to_process = set()
+        if appears_as_target:
+            uids_to_process.update(
+                uid
+                for uid in call_data[mid]
+                if uid not in ["intentos_depresivos", "depressive_time"]
+            )
+        if appears_as_source:
+            for target_id, inner in call_data.items():
+                if mid in inner and target_id not in [
+                    "intentos_depresivos",
+                    "depressive_time",
+                ]:
+                    uids_to_process.add(target_id)
+        uids_to_process = list(uids_to_process)
+
+        # ====== Obtener estadísticas secuencialmente ======
+        stats_cache = {}
+        for uid in uids_to_process:
+            stats_cache[uid] = await self._get_bidirectional_stats(call_data, mid, uid)
+
+        # ==== Estadísticas generales ====
         if appears_as_target:
             intentos_depresivos = call_data[mid].get("intentos_depresivos", 0)
             depressive_time = call_data[mid].get("depressive_time", 0)
-            msg += f"🔹 **Estadísticas generales**\n"
             if intentos_depresivos:
+                msg += f"🔹 **Estadísticas generales**\n"
                 msg += f"   • Intentos depresivos: {intentos_depresivos}. Ha estado llorando desconsoladamente {self.fmt_time(depressive_time)}.\n"
             msg += "\n   **Veces y tiempo total compartido con otros usuarios:**\n"
-            # ==== Veces totales que se unieron los dos usuarios y el tiempo total ====
-            for uid, val in call_data[mid].items():
+            for uid in call_data[mid]:
                 if uid in ["intentos_depresivos", "depressive_time"]:
                     continue
-                # usamos la función que suma ambos sentidos
-                stats = await self._get_bidirectional_stats(call_data, mid, uid)
+                stats = stats_cache[uid]
                 user_obj = stats["user_obj"]
                 name_display = (
                     user_obj.display_name
@@ -176,44 +198,39 @@ class CommandsCog(commands.Cog):
         # ==== Otros se unieron al usuario ====
         if appears_as_target:
             msg += f"🔹 **Veces que otros se unieron a {member.display_name}:**\n"
-            for uid, _ in call_data[mid].items():
+            for uid in call_data[mid]:
                 if uid in ["intentos_depresivos", "depressive_time"]:
                     continue
-
-                stats = await self._get_bidirectional_stats(call_data, mid, uid)
+                stats = stats_cache[uid]
                 user_obj = stats["user_obj"]
                 name_display = (
                     user_obj.display_name
                     if user_obj
                     else f"[Usuario desconocido {uid}]"
                 )
-
                 msg += f"   • {name_display} → {self.fmt_count(stats['calls_ab'])}.\n"
             msg += "\n"
 
         # ==== Usuario se unió a otros ====
         if appears_as_source:
             msg += f"🔹 **Veces que {member.display_name} se unió a otros:**\n"
-            for target_id, _ in call_data.items():
-                if mid in call_data.get(target_id, {}) and target_id not in [
+            for target_id, inner in call_data.items():
+                if mid in inner and target_id not in [
                     "intentos_depresivos",
                     "depressive_time",
                 ]:
-                    stats = await self._get_bidirectional_stats(
-                        call_data, mid, target_id
-                    )
+                    stats = stats_cache[target_id]
                     user_obj = stats["user_obj"]
                     name_display = (
                         user_obj.display_name
                         if user_obj
                         else f"[Usuario desconocido {target_id}]"
                     )
-
                     msg += (
                         f"   • {name_display} → {self.fmt_count(stats['calls_ba'])}.\n"
                     )
 
-        await interaction.response.send_message(msg)
+        await interaction.followup.send(msg)
 
     @app_commands.command(
         name="send_json",
@@ -261,7 +278,7 @@ class CommandsCog(commands.Cog):
 
     @app_commands.command(
         name="update_json",
-        description="Permite actualizar `stats.json` del bot en este servidor (solo admin).",
+        description="Permite actualizar los archivos de estadísticas del bot en este servidor (solo admin).",
     )
     async def update_json(self, interaction: discord.Interaction):
         user = interaction.user
