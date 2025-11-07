@@ -13,6 +13,19 @@ API_URL = os.getenv("API_URL")
 API_KEY = os.getenv("API_KEY", None)
 
 
+def stringify_keys(obj):
+    if isinstance(obj, dict):
+        new = {}
+        for k, v in obj.items():
+            new_key = str(k) if not isinstance(k, str) else k
+            new[new_key] = stringify_keys(v)
+        return new
+    elif isinstance(obj, list):
+        return [stringify_keys(i) for i in obj]
+    else:
+        return obj
+
+
 def send_to_fastapi(data, guild_id=None):
     """
     Envía data a FastAPI por guild_id.
@@ -20,31 +33,29 @@ def send_to_fastapi(data, guild_id=None):
     Imprime información de debug (status + body) para depuración.
     """
     gid = str(guild_id) if guild_id is not None else "default"
-
-    # Usa API_URL como nombre estándar (asegúrate de tener esta env var)
     if not API_URL:
         print(
             f"[FastAPI][ERROR] API_URL no configurada. No se puede enviar datos para {gid}."
         )
         return
 
+    safe_data = stringify_keys(data)
+    # opcional: si quieres detectar cambios
+    if safe_data != data:
+        print(
+            f"[FastAPI][WARN] Datos para {gid} han sido sanitizados (claves no-str convertidas)."
+        )
+
+    payload = {"guild_id": gid, "data": safe_data}
     headers = {}
     if API_KEY:
         headers["x-api-key"] = API_KEY
 
     endpoint = f"{API_URL.rstrip('/')}/save-json"
-
-    payload = {"guild_id": gid, "data": data}
-
     try:
         resp = requests.post(endpoint, json=payload, headers=headers, timeout=10)
-        # debug info
         print(f"[FastAPI][DEBUG] POST {endpoint} -> status {resp.status_code}")
-        try:
-            print(f"[FastAPI][DEBUG] response body: {resp.text}")
-        except Exception:
-            pass
-
+        print(f"[FastAPI][DEBUG] response body: {resp.text}")
         resp.raise_for_status()
         print(f"[FastAPI] Datos enviados para servidor {gid}.")
     except Exception as e:
