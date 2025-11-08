@@ -49,6 +49,7 @@ async def restore_stats_per_guild():
     Además, sanea los datos recibidos para evitar problemas con claves no string.
     """
     async with aiohttp.ClientSession() as session:
+        print("\033[93mRestaurando stats.json por servidor...\033[0m")
         for guild in bot.guilds:
             gid = str(guild.id)
             stats_dir = RAIZ_PROYECTO / "data" / gid
@@ -58,7 +59,7 @@ async def restore_stats_per_guild():
             try:
                 url = f"http://localhost:{PORT}/stats/{gid}"
                 async with session.get(
-                    url, headers={"x-api-key": API_KEY}, timeout=10
+                    url, headers={"x-api-key": API_KEY}, timeout=150
                 ) as r:
                     if r.status != 200:
                         if r.status == 404:
@@ -89,6 +90,7 @@ async def restore_stats_per_guild():
                 print(
                     f"\033[31m[INIT] no se pudo recuperar stats para servidor {gid}: {e}\033[0m"
                 )
+        print("\033[93mRestauración completada.\033[0m")
 
 
 @bot.event
@@ -122,9 +124,7 @@ async def on_ready():
     print("=" * ancho_total + "\n")
 
     # Lanzar restauración en background (no bloqueante)
-    print("\033[93mRestaurando stats.json por servidor...\033[0m")
     bot.loop.create_task(restore_stats_per_guild())
-    print("\033[93mRestauración completada.\033[0m")
 
 
 # ---------------- Función principal ----------------

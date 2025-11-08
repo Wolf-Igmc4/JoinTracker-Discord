@@ -73,21 +73,23 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
         safe_data = stringify_keys(payload.data)
         if safe_data != payload.data:
             print(
-                f"[WEB][WARN] Sanitizado payload.data para servidor {payload.guild_id} (claves no-str convertidas)."
+                f"\033[93m[WEB][WARN] Sanitizado payload.data para servidor {payload.guild_id} (claves no-str convertidas).\033[0m"
             )
 
         # Creación y adición del registro a la sesión de la base de datos
         record = JSONData(guild_id=payload.guild_id, data=safe_data)
         session.add(record)
-        session.commit()  # Confirmación de la inserción en la base de datos
+        session.commit()
         ts = record.created_at
-        print(f"[WEB] Guardados los datos del servidor {payload.guild_id}. Fecha: {ts}")
+        print(
+            f"\033[92m[WEB] ✅ Commit realizado: datos del servidor {payload.guild_id} guardados correctamente. Fecha: {ts}\033[0m"
+        )
 
     except Exception as e:
         # En caso de error, revertir cambios para mantener la integridad de la base de datos
         session.rollback()
         print(
-            f"[WEB] ⚠️ Cambios revertidos para servidor {payload.guild_id} debido a error: {e}"
+            f"\033[91m[WEB] ⚠️ Cambios revertidos para servidor {payload.guild_id} debido a error: {e}\033[0m"
         )
         raise HTTPException(status_code=500, detail=f"No se pudo guardar el JSON: {e}")
 
@@ -106,7 +108,7 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
     except Exception as e:
         # Fallback de respuesta en caso de error; los datos ya están persistidos
         print(
-            f"[WEB][WARN] No se pudo construir la respuesta JSON para {payload.guild_id}: {e}"
+            f"\033[93m[WEB][WARN] No se pudo construir la respuesta JSON para {payload.guild_id}: {e}\033[0m"
         )
         return {"status": "guardado", "guild": payload.guild_id, "timestamp": None}
 

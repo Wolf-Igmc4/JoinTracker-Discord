@@ -73,44 +73,53 @@ async def send_to_fastapi(data, guild_id=None):
     Se usa el endpoint POST /save-json con payload {"guild_id","data"}.
     Imprime información de debug (status + body) para depuración.
     """
-    gid = str(guild_id) if guild_id is not None else "default"
+    # Determinar ID y nombre del servidor de forma segura
+    if guild_id is None:
+        gid = "default"
+        guild_name = "default"
+    else:
+        try:
+            gid = str(guild_id.id)
+            guild_name = guild_id.name
+        except AttributeError:
+            gid = str(guild_id)
+            guild_name = gid
+
     if not API_URL:
         print(
-            f"[FastAPI][ERROR] API_URL no configurada. No se puede enviar datos para {gid}."
+            f"\033[31m[FastAPI][ERROR] API_URL no configurada. No se puede enviar datos para {guild_name} ({gid}).\033[0m"
         )
         return
 
     safe_data = stringify_keys(data)
     if safe_data != data:
         print(
-            f"[FastAPI][WARN] Datos para {gid} han sido sanitizados (claves no-str convertidas)."
+            f"\033[33m[FastAPI][WARN] Datos para {guild_name} ({gid}) han sido sanitizados (claves no-str convertidas).\033[0m"
         )
 
     bad = find_non_str_keys(safe_data)
     if bad:
-        print("[DEBUG] Claves no-str detectadas:")
+        print(
+            f"\033[33m[DEBUG] Claves no-str detectadas para {guild_name} ({gid}):\033[0m"
+        )
         for path, t in bad:
             print("   ", path, "tipo:", t)
 
     payload = {"guild_id": gid, "data": safe_data}
     headers = {"x-api-key": API_KEY} if API_KEY else {}
-
     endpoint = f"{API_URL.rstrip('/')}/save-json"
     timeout = httpx.Timeout(30.0, read=30.0)
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             resp = await client.post(endpoint, json=payload, headers=headers)
-            print(
-                f"[FastAPI][DEBUG] Servidor {gid} -> POST {endpoint} => status {resp.status_code} ({resp.reason_phrase})"
-            )
 
             try:
-                data_resp = resp.json()
+                data_resp = await resp.json()
             except Exception:
                 data_resp = None
                 print(
-                    f"[FastAPI][WARN] No se pudo parsear la respuesta JSON: {resp.text}"
+                    f"\033[33m[FastAPI][WARN] No se pudo parsear la respuesta JSON de {guild_name} ({gid}): {resp.text}\033[0m"
                 )
 
             if (
@@ -118,14 +127,18 @@ async def send_to_fastapi(data, guild_id=None):
                 and data_resp
                 and data_resp.get("status") == "guardado"
             ):
-                print(f"[FastAPI] ✅ Datos enviados correctamente para servidor {gid}")
+                print(
+                    f"\033[32m[FastAPI] ✅ Datos enviados correctamente para {guild_name} ({gid})\033[0m"
+                )
             else:
                 print(
-                    f"[FastAPI] ⚠️ Respuesta inesperada del servidor para {gid}: {resp.text}"
+                    f"\033[33m[FastAPI] ⚠️ Respuesta inesperada del servidor para {guild_name} ({gid}): {resp.text}\033[0m"
                 )
 
         except httpx.RequestError as e:
-            print(f"[FastAPI] ⚠️ Excepción al enviar datos para servidor {gid}: {e}")
+            print(
+                f"\033[33m[FastAPI] ⚠️ Excepción al enviar datos para {guild_name} ({gid}): {e}\033[0m"
+            )
 
 
 def _get_paths(member):

@@ -38,7 +38,7 @@ class SyncCog(commands.Cog):
             stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
             if stats_path.exists():
                 call_data = load_json(f"{gid}/stats.json")
-                await send_to_fastapi(call_data, guild_id=gid)
+                await send_to_fastapi(call_data, guild_id=guild)
 
         self.next_flush_at = datetime.utcnow() + timedelta(hours=24)
 
@@ -98,13 +98,15 @@ class SyncCog(commands.Cog):
             stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
             if stats_path.exists():
                 call_data = load_json(f"{gid}/stats.json")
-                await send_to_fastapi(call_data, guild_id=gid)
+                await send_to_fastapi(call_data, guild_id=guild)
                 sent += 1
 
-        await interaction.followup.send(
-            f"✅ Flush manual completado — {sent} servidor(es) sincronizado(s).",
-            ephemeral=True,
-        )
+        if sent == 1:
+            msg = "✅ Volcado manual completado — 1 servidor sincronizado con base de datos remota."
+        else:
+            msg = f"✅ Volcado manual completado — {sent} servidores sincronizados con base de datos remota."
+
+        await interaction.followup.send(msg, ephemeral=True)
 
 
 async def setup(bot):
