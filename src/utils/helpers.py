@@ -5,6 +5,7 @@ import os, json
 import requests
 from dotenv import load_dotenv
 import os
+import shutil
 
 
 # ---------------- Configuración FastAPI ----------------
@@ -100,13 +101,28 @@ def send_to_fastapi(data, guild_id=None):
 
     endpoint = f"{API_URL.rstrip('/')}/save-json"
     try:
-        resp = requests.post(endpoint, json=payload, headers=headers, timeout=10)
-        print(f"[FastAPI][DEBUG] POST {endpoint} -> status {resp.status_code}")
-        print(f"[FastAPI][DEBUG] response body: {resp.text}")
-        resp.raise_for_status()
-        print(f"[FastAPI] Datos enviados para servidor {gid}.")
-    except Exception as e:
-        print(f"[FastAPI] Excepción al enviar datos para servidor {gid}: {e}")
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=30)
+        print(
+            f"[FastAPI][DEBUG] Servidor {gid} -> POST {endpoint} "
+            f"=> status {resp.status_code} ({resp.reason})"
+        )
+
+        # Intentamos parsear JSON para confirmar que se guardó
+        try:
+            data = resp.json()
+        except Exception:
+            data = None
+            print(f"[FastAPI][WARN] No se pudo parsear la respuesta JSON: {resp.text}")
+
+        if resp.status_code == 200 and data and data.get("status") == "guardado":
+            print(f"[FastAPI] ✅ Datos enviados correctamente para servidor {gid}")
+        else:
+            print(
+                f"[FastAPI] ⚠️ Respuesta inesperada del servidor para {gid}: {resp.text}"
+            )
+
+    except requests.exceptions.RequestException as e:
+        print(f"[FastAPI] ⚠️ Excepción al enviar datos para servidor {gid}: {e}")
 
 
 def _get_paths(member):
@@ -377,7 +393,7 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
 
     try:
         await dm_channel.send(
-            f"Por favor, envía el archivo `{filename}` para actualizar los archivos del servidor {interaction.guild.name}. Tienes {timeout} segundos. Si no quieres actualizarlo, deja que pase el tiempo."
+            f"Por favor, envía el archivo `{filename}` para actualizar los archivos del servidor **{interaction.guild.name}**. Tienes {timeout} segundos. Si no quieres actualizarlo, deja que pase el tiempo."
         )
         await interaction.followup.send(
             f"Te he enviado un DM para que puedas subir `{filename}`. Si no quieres actualizarlo, deja que pase el tiempo.",
@@ -432,6 +448,14 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         os.makedirs(os.path.dirname(write_path) or ".", exist_ok=True)
         save_json(new_data, write_path)
 
+        # Borrar la carpeta temporal si quieres limpiar
+        try:
+            folder = os.path.dirname(write_path)
+            if folder and os.path.exists(folder):
+                shutil.rmtree(folder)
+        except Exception:
+            pass  # ignoramos errores si no se puede borrar
+
         try:
             await user.send(
                 f"`{filename}` actualizado correctamente. Comprueba el canal donde se envió el comando."
@@ -443,6 +467,9 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
             )
 
         os.remove(tmp_name)
+        print(
+            f"\033[32m[{user.guild.name}] Copia local de {filename} actualizada.\033[0m"
+        )
         return True
 
     except asyncio.TimeoutError:

@@ -287,10 +287,13 @@ class CommandsCog(commands.Cog):
                 "Solo los administradores pueden usar esto.", ephemeral=True
             )
             return
-
         # Indicamos que vamos a procesar la interacción y tardará un poco
         await interaction.response.defer(ephemeral=False)
 
+        await interaction.followup.send(
+            f"Actualización de base de datos local iniciada.",
+            ephemeral=False,
+        )
         global_vars = {"stats.json": self.call_data}
 
         for filename in ["stats.json", "dates.json"]:

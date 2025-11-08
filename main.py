@@ -124,6 +124,7 @@ async def on_ready():
     # Lanzar restauración en background (no bloqueante)
     print("\033[93mRestaurando stats.json por servidor...\033[0m")
     bot.loop.create_task(restore_stats_per_guild())
+    print("\033[93mRestauración completada.\033[0m")
 
 
 # ---------------- Función principal ----------------
