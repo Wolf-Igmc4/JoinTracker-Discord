@@ -115,21 +115,19 @@ async def send_to_fastapi(data, guild_id=None):
             resp = await client.post(endpoint, json=payload, headers=headers)
 
             try:
-                data_resp = await resp.json()
+                data_resp = resp.json()
             except Exception:
                 data_resp = None
                 print(
                     f"\033[33m[FastAPI][WARN] No se pudo parsear la respuesta JSON de {guild_name} ({gid}): {resp.text}\033[0m"
                 )
 
-            if (
-                resp.status_code == 200
-                and data_resp
-                and data_resp.get("status") == "guardado"
-            ):
+            if data_resp and data_resp.get("status") == "guardado":
                 print(
                     f"\033[32m[FastAPI] ✅ Datos enviados correctamente para {guild_name} ({gid})\033[0m"
                 )
+            elif data_resp is None:
+                pass
             else:
                 print(
                     f"\033[33m[FastAPI] ⚠️ Respuesta inesperada del servidor para {guild_name} ({gid}): {resp.text}\033[0m"
@@ -138,6 +136,10 @@ async def send_to_fastapi(data, guild_id=None):
         except httpx.RequestError as e:
             print(
                 f"\033[33m[FastAPI] ⚠️ Excepción al enviar datos para {guild_name} ({gid}): {e}\033[0m"
+            )
+        except Exception as e:
+            print(
+                f"\033[31m[FastAPI] ❌ Error inesperado en envío de datos: {e}\033[0m"
             )
 
 
