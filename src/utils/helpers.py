@@ -2,10 +2,10 @@
 import asyncio
 from .json_manager import save_json
 import os, json
-import requests
 from dotenv import load_dotenv
 import os
 import shutil
+import httpx
 
 
 # ---------------- Configuración FastAPI ----------------
@@ -67,9 +67,9 @@ def find_non_str_keys(obj, path="root"):
     return bad
 
 
-def send_to_fastapi(data, guild_id=None):
+async def send_to_fastapi(data, guild_id=None):
     """
-    Envía data a FastAPI por guild_id.
+    Envía data a FastAPI por guild_id de manera asíncrona.
     Se usa el endpoint POST /save-json con payload {"guild_id","data"}.
     Imprime información de debug (status + body) para depuración.
     """
@@ -81,13 +81,11 @@ def send_to_fastapi(data, guild_id=None):
         return
 
     safe_data = stringify_keys(data)
-    # opcional: si quieres detectar cambios
     if safe_data != data:
         print(
             f"[FastAPI][WARN] Datos para {gid} han sido sanitizados (claves no-str convertidas)."
         )
 
-    # debug: encontrar claves no-str
     bad = find_non_str_keys(safe_data)
     if bad:
         print("[DEBUG] Claves no-str detectadas:")
@@ -95,34 +93,39 @@ def send_to_fastapi(data, guild_id=None):
             print("   ", path, "tipo:", t)
 
     payload = {"guild_id": gid, "data": safe_data}
-    headers = {}
-    if API_KEY:
-        headers["x-api-key"] = API_KEY
+    headers = {"x-api-key": API_KEY} if API_KEY else {}
 
     endpoint = f"{API_URL.rstrip('/')}/save-json"
-    try:
-        resp = requests.post(endpoint, json=payload, headers=headers, timeout=30)
-        print(
-            f"[FastAPI][DEBUG] Servidor {gid} -> POST {endpoint} "
-            f"=> status {resp.status_code} ({resp.reason})"
-        )
+    timeout = httpx.Timeout(30.0, read=30.0)
 
-        # Intentamos parsear JSON para confirmar que se guardó
+    async with httpx.AsyncClient(timeout=timeout) as client:
         try:
-            data = resp.json()
-        except Exception:
-            data = None
-            print(f"[FastAPI][WARN] No se pudo parsear la respuesta JSON: {resp.text}")
-
-        if resp.status_code == 200 and data and data.get("status") == "guardado":
-            print(f"[FastAPI] ✅ Datos enviados correctamente para servidor {gid}")
-        else:
+            resp = await client.post(endpoint, json=payload, headers=headers)
             print(
-                f"[FastAPI] ⚠️ Respuesta inesperada del servidor para {gid}: {resp.text}"
+                f"[FastAPI][DEBUG] Servidor {gid} -> POST {endpoint} => status {resp.status_code} ({resp.reason_phrase})"
             )
 
-    except requests.exceptions.RequestException as e:
-        print(f"[FastAPI] ⚠️ Excepción al enviar datos para servidor {gid}: {e}")
+            try:
+                data_resp = resp.json()
+            except Exception:
+                data_resp = None
+                print(
+                    f"[FastAPI][WARN] No se pudo parsear la respuesta JSON: {resp.text}"
+                )
+
+            if (
+                resp.status_code == 200
+                and data_resp
+                and data_resp.get("status") == "guardado"
+            ):
+                print(f"[FastAPI] ✅ Datos enviados correctamente para servidor {gid}")
+            else:
+                print(
+                    f"[FastAPI] ⚠️ Respuesta inesperada del servidor para {gid}: {resp.text}"
+                )
+
+        except httpx.RequestError as e:
+            print(f"[FastAPI] ⚠️ Excepción al enviar datos para servidor {gid}: {e}")
 
 
 def _get_paths(member):

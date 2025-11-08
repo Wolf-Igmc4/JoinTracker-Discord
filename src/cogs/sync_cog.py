@@ -38,7 +38,7 @@ class SyncCog(commands.Cog):
             stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
             if stats_path.exists():
                 call_data = load_json(f"{gid}/stats.json")
-                send_to_fastapi(call_data, guild_id=gid)
+                await send_to_fastapi(call_data, guild_id=gid)
 
         self.next_flush_at = datetime.utcnow() + timedelta(hours=24)
 
@@ -89,7 +89,7 @@ class SyncCog(commands.Cog):
                 ephemeral=True,
             )
             return
-
+        print("Volcado de bases de datos llamada.")
         await interaction.response.defer(ephemeral=True)
 
         sent = 0
@@ -98,7 +98,7 @@ class SyncCog(commands.Cog):
             stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
             if stats_path.exists():
                 call_data = load_json(f"{gid}/stats.json")
-                send_to_fastapi(call_data, guild_id=gid)
+                await send_to_fastapi(call_data, guild_id=gid)
                 sent += 1
 
         await interaction.followup.send(
