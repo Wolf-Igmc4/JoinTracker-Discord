@@ -20,14 +20,13 @@ POSTGRES_PASSWORD = os.getenv("DATABASE_PASSWORD")
 POSTGRES_HOST = os.getenv("DATABASE_HOST")
 POSTGRES_PORT = os.getenv("DATABASE_PORT", "5432")
 POSTGRES_DB = os.getenv("DATABASE_NAME")
-
+DATABASE_SSLMODE = os.getenv("DATABASE_SSLMODE")
 if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB]):
     raise ValueError(
         "Faltan variables de entorno de la base de datos. "
         "Asegúrate de tener DATABASE_USER, DATABASE_PASSWORD, DATABASE_HOST y DATABASE_NAME."
     )
-
-DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?{DATABASE_SSLMODE}"
 
 # ---------------- SQLAlchemy Setup ----------------
 engine = create_engine(DATABASE_URL, echo=False, future=True)

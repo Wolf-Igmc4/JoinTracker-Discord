@@ -133,7 +133,7 @@ class CommandsCog(commands.Cog):
     async def all_call_stats(
         self, interaction: discord.Interaction, member: discord.Member = None
     ):
-        await interaction.response.defer()  # Da más tiempo al bot
+        await interaction.response.defer()
 
         guild = interaction.guild
         call_data = load_json(f"{guild.id}/stats.json")
