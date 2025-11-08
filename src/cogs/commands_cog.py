@@ -158,12 +158,12 @@ class CommandsCog(commands.Cog):
             uids_to_process.update(
                 uid
                 for uid in call_data[mid]
-                if uid not in ["intentos_depresivos", "depressive_time"]
+                if uid not in ["depressive_attempts", "depressive_time"]
             )
         if appears_as_source:
             for target_id, inner in call_data.items():
                 if mid in inner and target_id not in [
-                    "intentos_depresivos",
+                    "depressive_attempts",
                     "depressive_time",
                 ]:
                     uids_to_process.add(target_id)
@@ -176,14 +176,14 @@ class CommandsCog(commands.Cog):
 
         # ==== Estadísticas generales ====
         if appears_as_target:
-            intentos_depresivos = call_data[mid].get("intentos_depresivos", 0)
+            depressive_attempts = call_data[mid].get("depressive_attempts", 0)
             depressive_time = call_data[mid].get("depressive_time", 0)
-            if intentos_depresivos:
+            if depressive_attempts:
                 msg += f"🔹 **Estadísticas generales**\n"
-                msg += f"   • Intentos depresivos: {intentos_depresivos}. Ha estado llorando desconsoladamente {self.fmt_time(depressive_time)}.\n"
+                msg += f"   • Intentos depresivos: {depressive_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(depressive_time)}.\n"
             msg += "\n   **Veces y tiempo total compartido con otros usuarios:**\n"
             for uid in call_data[mid]:
-                if uid in ["intentos_depresivos", "depressive_time"]:
+                if uid in ["depressive_attempts", "depressive_time"]:
                     continue
                 stats = stats_cache[uid]
                 user_obj = stats["user_obj"]
@@ -192,14 +192,14 @@ class CommandsCog(commands.Cog):
                     if user_obj
                     else f"[Usuario desconocido {uid}]"
                 )
-                msg += f"   • {name_display} → {self.fmt_count(stats['total_calls'])}. 🕒 {self.fmt_time(stats['total_seconds'])}.\n"
+                msg += f"   • {name_display} → {self.fmt_count(stats['total_calls'])}. Tiempo juntos: 🕒 {self.fmt_time(stats['total_seconds'])}.\n"
             msg += "\n"
 
         # ==== Otros se unieron al usuario ====
         if appears_as_target:
             msg += f"🔹 **Veces que otros se unieron a {member.display_name}:**\n"
             for uid in call_data[mid]:
-                if uid in ["intentos_depresivos", "depressive_time"]:
+                if uid in ["depressive_attempts", "depressive_time"]:
                     continue
                 stats = stats_cache[uid]
                 user_obj = stats["user_obj"]
@@ -216,7 +216,7 @@ class CommandsCog(commands.Cog):
             msg += f"🔹 **Veces que {member.display_name} se unió a otros:**\n"
             for target_id, inner in call_data.items():
                 if mid in inner and target_id not in [
-                    "intentos_depresivos",
+                    "depressive_attempts",
                     "depressive_time",
                 ]:
                     stats = stats_cache[target_id]
@@ -234,7 +234,7 @@ class CommandsCog(commands.Cog):
 
     @app_commands.command(
         name="descargar_json",
-        description="Envía los archivos stats.json y fechas.json del servidor (solo admin).",
+        description="Envía los archivos stats.json y dates.json del servidor (solo admin).",
     )
     async def download_json(self, interaction: discord.Interaction):
         user = interaction.user
@@ -248,7 +248,7 @@ class CommandsCog(commands.Cog):
             return
 
         files = []
-        for filename in ["stats.json", "fechas.json"]:
+        for filename in ["stats.json", "dates.json"]:
             path = os.path.join(self.data_dir, str(guild.id), filename)
             if os.path.exists(path):
                 files.append(discord.File(path))
@@ -289,15 +289,15 @@ class CommandsCog(commands.Cog):
             return
 
         # Indicamos que vamos a procesar la interacción y tardará un poco
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
 
         global_vars = {"stats.json": self.call_data}
 
-        for filename in ["stats.json", "fechas.json"]:
+        for filename in ["stats.json", "dates.json"]:
             await update_json_file(self.bot, interaction, filename, global_vars)
 
         await interaction.followup.send(
-            "Actualización de base de datos local finalizada.", ephemeral=True
+            "Actualización de base de datos local finalizada.", ephemeral=False
         )
 
 

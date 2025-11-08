@@ -11,6 +11,7 @@ from src.config import RAIZ_PROYECTO
 from webserver import app
 from src.utils.helpers import stringify_keys
 import aiohttp
+from datetime import datetime
 
 # ---------------- Cargar configuración ----------------
 load_dotenv()
@@ -39,7 +40,7 @@ async def root_head():
 
 # ---------------- Discord Bot ----------------
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="/", intents=intents)
+bot = commands.Bot(command_prefix="/", intents=intents, owner_id=477811183282552854)
 
 
 async def restore_stats_per_guild():
@@ -79,11 +80,15 @@ async def restore_stats_per_guild():
                         with stats_path.open("w", encoding="utf-8") as f:
                             json.dump(safe_data_local, f, indent=2)
 
-                        print(f"[INIT] stats.json restaurado para servidor {gid}")
+                        print(
+                            f"\033[32m[INIT] stats.json restaurado para servidor {gid}\033[0m"
+                        )
                     else:
-                        print(f"[INIT] no hay datos para servidor {gid}")
+                        print(f"\033[33m[INIT] no hay datos para servidor {gid}\033[0m")
             except Exception as e:
-                print(f"[INIT] no se pudo recuperar stats para servidor {gid}: {e}")
+                print(
+                    f"\033[31m[INIT] no se pudo recuperar stats para servidor {gid}: {e}\033[0m"
+                )
 
 
 @bot.event
@@ -102,16 +107,22 @@ async def on_ready():
     )
     try:
         cmds = await bot.tree.sync()
-        print(f"{len(cmds)} comandos sincronizados: {[cmd.name for cmd in cmds]}")
+        print(
+            f"\033[32m{len(cmds)} comandos sincronizados: {', '.join([cmd.name for cmd in cmds])}\033[0m"
+        )
     except Exception as e:
         print(f"Error sincronizando comandos: {e}")
 
-    print(f"\n{'='*50}")
-    print(f"\t\t\t✅ JoinTracker operativo")
-    print(f"{'='*50}\n")
+    ancho_total = 40  # ancho de la línea
+    print("\n" + "=" * ancho_total)
+    print(f"{'✅ JoinTracker operativo'.center(ancho_total)}")
+    print(
+        f"{f'🕒 Arranque: {datetime.now().strftime('%H:%M:%S')}'.center(ancho_total)}"
+    )
+    print("=" * ancho_total + "\n")
 
     # Lanzar restauración en background (no bloqueante)
-    print("Restaurando stats.json por servidor...")
+    print("\033[93mRestaurando stats.json por servidor...\033[0m")
     bot.loop.create_task(restore_stats_per_guild())
 
 

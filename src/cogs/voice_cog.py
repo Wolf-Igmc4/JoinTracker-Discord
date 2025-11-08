@@ -17,7 +17,7 @@ class VoiceCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.timeout = 150  # Tiempo en segundos para considerar un intento depresivo
+        self.timeout = 10  # Tiempo en segundos para considerar un intento depresivo
         self.timers = {}  # Guarda tareas asyncio activas por usuario
         self.historiales_por_canal = (
             {}
@@ -60,9 +60,9 @@ class VoiceCog(commands.Cog):
         )
 
         guild = member.guild
-        # cargamos stats (antes datos.json) y las fechas
+
         stats = load_json(f"{guild.id}/stats.json")
-        time_entries = load_json(f"{guild.id}/fechas.json")
+        time_entries = load_json(f"{guild.id}/dates.json")
 
         if len(after.channel.members) >= 2:
             for m in after.channel.members:
@@ -93,7 +93,7 @@ class VoiceCog(commands.Cog):
 
         guild = member.guild
         stats = load_json(f"{guild.id}/stats.json")
-        time_entries = load_json(f"{guild.id}/fechas.json")
+        time_entries = load_json(f"{guild.id}/dates.json")
 
         check_depressive_attempts(
             member, self.is_depressed, stats, self.recorded_attempts, time_entries
@@ -110,24 +110,27 @@ class VoiceCog(commands.Cog):
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
         update_channel_history(self.historiales_por_canal, after.channel.id, 1)
         print(
-            f"[{member.guild.name}] {member.display_name} se ha movido de {before.channel.name} a {after.channel.name}. Ahora hay {len(after.channel.members)} miembros: {', '.join(m.display_name for m in after.channel.members)}."
+            f"\033[93m[{member.guild.name}] {member.display_name} se ha movido de {before.channel.name} a {after.channel.name}.\033[0m Ahora hay {len(after.channel.members)} miembros: {', '.join(m.display_name for m in after.channel.members)}."
         )
-
         guild = member.guild
         stats = load_json(f"{guild.id}/stats.json")
-        time_entries = load_json(f"{guild.id}/fechas.json")
+        time_entries = load_json(f"{guild.id}/dates.json")
 
-        # Si el canal destino tiene al menos 2 o más personas, registrar la interacción
+        # Si el canal destino tiene al menos 2 o más personas
         if len(after.channel.members) >= 2:
-            self.cancel_timer(member)
+            # Se resetean flags para todos los miembros del canal destino
             for m in after.channel.members:
-                # registrar llamadas/tiempo entre el que se ha movido y los demás
+                mid = str(m.id)
+                self.is_depressed[mid] = False
+                self.recorded_attempts.pop(mid, None)
+
+                self.cancel_timer(m)
                 if m != member:
                     save_time(time_entries, member, m, True)
                     handle_call_data(stats, member, m)
 
         else:
-            # Si el canal origen queda con 1 persona, iniciar temporizador para esa persona
+            # Si el canal origen queda con 1 persona, iniciar temporizador para esa persona si no existía
             self.start_timer(member, stats, time_entries)
             for m in before.channel.members:
                 if m != member:

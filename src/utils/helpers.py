@@ -112,7 +112,7 @@ def send_to_fastapi(data, guild_id=None):
 def _get_paths(member):
     """Devuelve las rutas base de los JSON según el servidor."""
     gid = str(member.guild.id)
-    return f"{gid}/stats.json", f"{gid}/fechas.json"
+    return f"{gid}/stats.json", f"{gid}/dates.json"
 
 
 # ============================== #
@@ -148,7 +148,7 @@ def check_depressive_attempts(
 ):
     """
     Consolida un intento depresivo:
-    - incrementa stats[mid]['intentos_depresivos']
+    - incrementa stats[mid]['depressive_attempts']
     - suma el tiempo solo leyendo time_entries['_solo'][mid] (si existe) en stats[mid]['depressive_time']
     - borra el marcador de time_entries y guarda ambos JSON
     - marca recorded_attempts[mid] = True para no duplicar
@@ -165,12 +165,11 @@ def check_depressive_attempts(
 
     stats.setdefault(mid, {})
     # incrementar contador de intentos
-    stats[mid]["intentos_depresivos"] = stats[mid].get("intentos_depresivos", 0) + 1
+    stats[mid]["depressive_attempts"] = stats[mid].get("depressive_attempts", 0) + 1
 
     solo_secs = 0.0
 
-    # Intentamos leer marcador desde time_entries (fechas.json) en la clave especial "_solo"
-    # TODO
+    # Intentamos leer marcador desde time_entries (dates.json) en la clave especial "_solo"
     if time_entries is not None:
         solo_container = time_entries.get("_solo", {})
         solo = solo_container.get(mid)
@@ -208,8 +207,8 @@ def check_depressive_attempts(
 
     # Log legible
     print(
-        f"[{member.guild.name}] {member.display_name} ha tenido un episodio depresivo nuevo (total: {stats[mid]['intentos_depresivos']}). "
-        f"Ha estado: {stats[mid]['depressive_time']:.2f} segundos solo en total."
+        f"[{member.guild.name}] {member.display_name} ha tenido un episodio depresivo nuevo (total: {stats[mid]['depressive_attempts']}). "
+        f"Ha estado: {stats[mid]['depressive_time']:.2f} segundos solo en total (+ {solo_secs} segundos)."
     )
 
 
@@ -318,7 +317,7 @@ def update_channel_history(historiales_por_canal, channel_id, cambio):
 async def timer_task(member, is_depressed, timers, timeout=150, time_entries=None):
     """
     Marca un usuario como deprimido si permanece solo demasiado tiempo.
-    Si se pasa time_entries, guarda en fechas.json (time_entries) la marca de solo_start.
+    Si se pasa time_entries, guarda en dates.json (time_entries) la marca de solo_start.
     """
     time_left = timeout
     try:
@@ -333,7 +332,7 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
         mid = str(member.id)
         is_depressed[mid] = True
 
-        # Guardamos el marcador en time_entries (fechas.json) para robustez local
+        # Guardamos el marcador en time_entries (dates.json) para robustez local
         if time_entries is not None:
             from datetime import datetime
 
@@ -348,7 +347,7 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
             save_json(time_entries, fechas_path)
 
         print(
-            f"[{member.guild.name}] {member.display_name} se ha marcado como deprimido (marcado en fechas.json)."
+            f"[{member.guild.name}] {member.display_name} se ha marcado como deprimido (marcado en dates.json)."
         )
 
     except asyncio.CancelledError:
@@ -364,9 +363,10 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
 #    ACTUALIZADOR JSON     #
 # ======================== #
 async def update_json_file(bot, interaction, filename, global_vars: dict, timeout=60.0):
-    if filename != "stats.json":
+    allowed_files = ["stats.json", "dates.json"]
+    if filename not in allowed_files:
         await interaction.followup.send(
-            "Por ahora, solo se puede actualizar `stats.json`. Asegúrate de enviar el archivo con ese nombre.",
+            f"Solo se pueden actualizar estos archivos: {', '.join(allowed_files)}.",
             ephemeral=True,
         )
         return False
@@ -377,14 +377,15 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
 
     try:
         await dm_channel.send(
-            f"Por favor, envía el archivo `{filename}` aquí. Tienes {timeout} segundos."
+            f"Por favor, envía el archivo `{filename}` para actualizar los archivos del servidor {interaction.guild.name}. Tienes {timeout} segundos. Si no quieres actualizarlo, deja que pase el tiempo."
         )
         await interaction.followup.send(
-            f"Te he enviado un DM para que puedas subir `{filename}`.", ephemeral=True
+            f"Te he enviado un DM para que puedas subir `{filename}`. Si no quieres actualizarlo, deja que pase el tiempo.",
+            ephemeral=True,
         )
     except Exception:
         await interaction.followup.send(
-            "No pude enviarte un DM. Por favor, revisa tu configuración de mensajes directos.",
+            "No pude enviarte un DM. Revisa tu configuración de mensajes directos.",
             ephemeral=True,
         )
         return False
@@ -418,12 +419,13 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         with open(tmp_name, "r", encoding="utf-8") as f:
             new_data = json.load(f)
 
-        stats_obj = global_vars.get("stats.json")
-        if isinstance(stats_obj, dict):
-            stats_obj.clear()
-            stats_obj.update(new_data)
+        # Actualizamos la variable global correspondiente
+        obj = global_vars.get(filename)
+        if isinstance(obj, dict):
+            obj.clear()
+            obj.update(new_data)
         else:
-            global_vars["stats.json"] = new_data
+            global_vars[filename] = new_data
 
         guild = interaction.guild
         write_path = os.path.join(str(guild.id), filename) if guild else filename
@@ -435,18 +437,21 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
                 f"`{filename}` actualizado correctamente. Comprueba el canal donde se envió el comando."
             )
         except Exception:
-            # Si falla, enviamos fallback al canal del servidor
             await interaction.followup.send(
                 f"`{filename}` actualizado correctamente, pero no pude enviarte un DM.",
                 ephemeral=True,
             )
+
         os.remove(tmp_name)
         return True
 
     except asyncio.TimeoutError:
-        await user.send(f"Tiempo de espera agotado para enviar `{filename}`.")
+        await user.send(
+            f"Tiempo de espera agotado para enviar `{filename}`. Si quieres enviarlo, vuelve a usar el comando después."
+        )
         await interaction.followup.send(
-            f"Tiempo de espera agotado para `{filename}`.", ephemeral=False
+            f"Tiempo de espera agotado para `{filename}`. Si quieres enviarlo, vuelve a usar el comando después.",
+            ephemeral=False,
         )
         return False
 
