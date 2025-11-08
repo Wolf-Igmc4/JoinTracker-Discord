@@ -253,7 +253,7 @@ class CommandsCog(commands.Cog):
             if os.path.exists(path):
                 files.append(discord.File(path))
             else:
-                print(f"[WARN] No se encontró {path}")
+                print(f"[WARN] No se encontró {path}.")
 
         if files:
             await interaction.response.send_message(
