@@ -61,37 +61,54 @@ class Payload(BaseModel):
 # ---------------- Endpoints ----------------
 @app.post("/save-json")
 async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
+    # Verificación de la clave API para autenticar al cliente y prevenir accesos no autorizados
     if API_KEY is None or x_api_key != API_KEY:
         print("Las claves no coinciden.")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     session = SessionLocal()
+    ts = None  # Timestamp del registro creado
     try:
+        # Sanitización de las claves del JSON para garantizar que sean cadenas
         safe_data = stringify_keys(payload.data)
         if safe_data != payload.data:
             print(
                 f"[WEB][WARN] Sanitizado payload.data para servidor {payload.guild_id} (claves no-str convertidas)."
             )
 
+        # Creación y adición del registro a la sesión de la base de datos
         record = JSONData(guild_id=payload.guild_id, data=safe_data)
         session.add(record)
-        session.commit()
-
+        session.commit()  # Confirmación de la inserción en la base de datos
         ts = record.created_at
-
         print(f"[WEB] Guardados los datos del servidor {payload.guild_id}. Fecha: {ts}")
 
+    except Exception as e:
+        # En caso de error, revertir cambios para mantener la integridad de la base de datos
+        session.rollback()
+        print(
+            f"[WEB] ⚠️ Cambios revertidos para servidor {payload.guild_id} debido a error: {e}"
+        )
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar el JSON: {e}")
+
+    finally:
+        # Cierre de la sesión de base de datos para liberar recursos
+        session.close()
+
+    # Construcción de la respuesta JSON fuera del bloque try principal
+    # Garantiza que la respuesta no afecte el guardado de los datos
+    try:
         return {
             "status": "guardado",
             "guild": payload.guild_id,
-            "timestamp": ts.isoformat(),
+            "timestamp": ts.isoformat() if ts else None,
         }
-
     except Exception as e:
-        session.rollback()
-        return {"error": f"No se pudo guardar el JSON: {e}"}
-    finally:
-        session.close()
+        # Fallback de respuesta en caso de error; los datos ya están persistidos
+        print(
+            f"[WEB][WARN] No se pudo construir la respuesta JSON para {payload.guild_id}: {e}"
+        )
+        return {"status": "guardado", "guild": payload.guild_id, "timestamp": None}
 
 
 @app.get("/stats/{guild_id}")
