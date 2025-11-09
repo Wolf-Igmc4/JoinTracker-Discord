@@ -351,14 +351,15 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
             save_json(time_entries, fechas_path)
 
         print(
-            f"\033[93m[{member.guild.name}] {member.display_name} se ha marcado como deprimido.\033[0m"
+            f"\033[93m[{member.guild.name}] {member.display_name} se ha marcado con depresión.\033[0m"
         )
 
     except asyncio.CancelledError:
         print(
             f"\033[93m[{member.guild.name}] Temporizador cancelado para {member.display_name} antes de deprimirse (quedaban {time_left}s).\033[0m"
         )
-        is_depressed[str(member.id)] = False
+        mid = str(member.id)
+        is_depressed[mid] = False
 
 
 # ======================== #

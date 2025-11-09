@@ -45,26 +45,33 @@ class VoiceCog(commands.Cog):
             elif before.channel and not after.channel:
                 await self.member_left(member, before)
         except Exception as e:
-            print(f"Error en voice update: {e}")
+            print(f"Error en voice_update: {e}")
 
     async def member_joined(self, member, after):
         """Maneja la entrada de un miembro a un canal de voz."""
+
+        # Se desmarcan flags de depresión (por si tenía alguno de antes)
         mid = str(member.id)
-        self.is_depressed[mid] = False
-        self.recorded_attempts.pop(mid, None)
+        if self.is_depressed.get(mid, False):
+            self.is_depressed[mid] = False
+            self.recorded_attempts.pop(mid, None)
 
         update_channel_history(self.historiales_por_canal, after.channel.id, 1)
+
         print(
             f"\033[92m[{member.guild.name}] {member.display_name} se ha unido a {after.channel.name}. "
-            f"Ahora hay {len(after.channel.members)} miembros: {', '.join(m.display_name for m in after.channel.members)}.\033[0m"
+            f"Ahora hay {len(after.channel.members)} miembros: "
+            f"{', '.join(m.display_name for m in after.channel.members)}.\033[0m"
         )
 
         guild = member.guild
-
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/dates.json")
 
-        if len(after.channel.members) >= 2:
+        num_members = len(after.channel.members)
+
+        # Canal con ≥2 miembros
+        if num_members >= 2:
             for m in after.channel.members:
                 await self.cancel_timer(m)
                 self.is_depressed[str(m.id)] = False
@@ -72,8 +79,14 @@ class VoiceCog(commands.Cog):
                 if m != member:
                     handle_call_data(stats, member, m)
                     save_time(time_entries, member, m, True)
+
+        # Canal con 1 miembro
+        elif num_members == 1:
+            self.start_timer(member, time_entries)
+
+        # Canal sin miembros y otros casos
         else:
-            self.start_timer(member, stats, time_entries)
+            pass
 
     async def member_left(self, member, before):
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
@@ -85,38 +98,55 @@ class VoiceCog(commands.Cog):
         guild = member.guild
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/dates.json")
+        mid = str(member.id)
 
-        member_flag = self.is_depressed.get(str(member.id), False)
+        member_flag = self.is_depressed.get(mid, False)
 
         await self.cancel_timer(member)
 
         # Se resetea flag solo si el timer no se completó
         if not member_flag:
-            self.is_depressed[str(member.id)] = False
+            self.is_depressed[mid] = False
 
         check_depressive_attempts(
             member, member_flag, stats, self.recorded_attempts, time_entries
         )
 
+        updated_users = []
+
         for m in before.channel.members:
+            updated_users.append(m.display_name)
             if m != member:
                 save_time(time_entries, member, m, False)
                 calculate_total_time(time_entries, stats, member, m)
 
+        if updated_users:
+            print(
+                f"[{member.guild.name}] Actualizado el tiempo con los usuarios: {', '.join(updated_users)}"
+            )
+
     async def member_moved(self, member, before, after):
         """Maneja cuando un usuario se mueve de un canal a otro."""
+
+        # Actualizar historial de canales
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
         update_channel_history(self.historiales_por_canal, after.channel.id, 1)
+
+        num_after = len(after.channel.members)
+        num_before = len(before.channel.members)
+
         print(
-            f"\033[93m[{member.guild.name}] {member.display_name} se ha movido de {before.channel.name} a {after.channel.name}.\033[0m Ahora hay {len(after.channel.members)} miembros: {', '.join(m.display_name for m in after.channel.members)}."
+            f"\033[93m[{member.guild.name}] {member.display_name} se ha movido de "
+            f"{before.channel.name} a {after.channel.name}.\033[0m "
+            f"Ahora hay {num_after} miembros: {', '.join(m.display_name for m in after.channel.members)}."
         )
+
         guild = member.guild
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/dates.json")
 
-        # Si el canal destino tiene al menos 2 o más personas
-        if len(after.channel.members) >= 2:
-            # Se resetean flags para todos los miembros del canal destino
+        # Canal destino tiene ≥2 miembros
+        if num_after >= 2:
             for m in after.channel.members:
                 mid = str(m.id)
                 self.is_depressed[mid] = False
@@ -126,15 +156,22 @@ class VoiceCog(commands.Cog):
                     save_time(time_entries, member, m, True)
                     handle_call_data(stats, member, m)
 
-        else:
-            # Si el canal origen queda con 1 persona, iniciar temporizador para esa persona si no existía
-            self.start_timer(member, stats, time_entries)
-            for m in before.channel.members:
-                if m != member:
-                    save_time(time_entries, member, m, False)
-                    calculate_total_time(time_entries, stats, member, m)
+        # Canal origen queda con exactamente 1 persona
+        if num_before == 1:
+            remaining_member = before.channel.members[0]
+            print(f"EL MIEMBRO RESTANTE ES: {remaining_member}")
+            self.start_timer(remaining_member, time_entries)
+            save_time(time_entries, member, remaining_member, False)
+            calculate_total_time(time_entries, stats, member, remaining_member)
+            print(
+                f"Actualizado el tiempo con el usuario: {remaining_member.display_name}"
+            )
 
-    def start_timer(self, member, stats, time_entries):
+        # Canal sin miembros y otros casos
+        else:
+            pass
+
+    def start_timer(self, member, time_entries):
         mid = str(member.id)
         if mid in self.timers:
             return
@@ -150,7 +187,7 @@ class VoiceCog(commands.Cog):
         )
         self.timers[mid] = task
         print(
-            f"\033[93mTemporizador iniciado para {member.display_name} ({self.timeout}s).\033[0m"
+            f"\033[93m[{member.guild.name}] Temporizador iniciado para marcar a {member.display_name} con depresión.\033[0m"
         )
 
     async def cancel_timer(self, member):

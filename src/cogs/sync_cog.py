@@ -58,16 +58,18 @@ class SyncCog(commands.Cog):
                 return
 
         now = datetime.utcnow()
-        horas = (self.next_flush_at - now).total_seconds() / 3600
+        hours = (self.next_flush_at - now).total_seconds() / 3600
 
-        if horas <= 0:
+        if hours <= 0:
             print(
                 "\033[33m⏳ Queda menos de 1 hora para el próximo volcado automático (o está en curso).\033[0m"
             )
         else:
-            hours = int(round(horas))
+            h = int(round(hours))
             print(
-                f"\033[33m⏳ Quedan {hours} horas para el próximo volcado automático.\033[0m"
+                f"\033[33m⏳ Quedan {h} horas para el próximo volcado automático.\n"
+                f"   Hora de mensaje: {now:%Y-%m-%d %H:%M:%S UTC}\n"
+                f"   Hora programada: {self.next_flush_at:%Y-%m-%d %H:%M:%S UTC}\033[0m"
             )
 
     @flush_eta.before_loop

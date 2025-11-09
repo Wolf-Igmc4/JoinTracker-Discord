@@ -17,13 +17,15 @@ class MiscCog(commands.Cog):
         # Si el bot fue mencionado directamente (@JoinTracker)
         if self.bot.user in message.mentions:
             embed = discord.Embed(
-                title="Holaaa! Soy JoinTracker",
+                title="Holaaa! Soy JoinTracker :3",
                 description=(
                     "Te ayudo a **rastrear y analizar la actividad en llamadas de voz**.\n\n"
                     "📊 **Comandos principales:**\n"
                     "• `/call_stats` → Muestra cuántas veces un usuario se ha unido a otro en llamada.\n"
                     "• `/all_call_stats` → Muestra todas las estadísticas de un usuario.\n"
-                    "Entre otras funciones, registro los intentos de hablar solo (llamadas en solitario demasiado largas sin que nadie se una a ti).\n"
+                    "También registro los intentos de hablar en solitario (llamadas donde nadie más se une), "
+                    "pero solo se registran cuando sales del canal! También se sigue la misma lógica para guardar\n"
+                    "el tiempo entre usuarios :3.\n"
                     "Puedes ver la información de los comandos escribiendo '/' y leyendo su descripción."
                 ),
                 color=discord.Color.yellow(),

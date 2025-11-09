@@ -95,7 +95,6 @@ async def restore_stats_per_guild():
 
 @bot.event
 async def setup_hook():
-    # Cargar todos los cogs
     await bot.load_extension("src.cogs.voice_cog")
     await bot.load_extension("src.cogs.commands_cog")
     await bot.load_extension("src.cogs.misc_cog")
@@ -123,7 +122,7 @@ async def on_ready():
     )
     print("=" * ancho_total + "\n")
 
-    # Lanzar restauración en background (no bloqueante)
+    # Lanzar restauración de datos
     bot.loop.create_task(restore_stats_per_guild())
 
 
