@@ -178,19 +178,20 @@ def handle_call_data(stats, member, channel_member):
 
 
 def check_depressive_attempts(
-    member, is_depressed, stats, recorded_attempts, time_entries=None
+    member, is_depressed_flag, stats, recorded_attempts, time_entries=None
 ):
     """
-    Consolida un intento depresivo:
+    Consolida un intento depresivo para un miembro:
     - incrementa stats[mid]['depressive_attempts']
     - suma el tiempo solo leyendo time_entries['_solo'][mid] (si existe) en stats[mid]['depressive_time']
     - borra el marcador de time_entries y guarda ambos JSON
     - marca recorded_attempts[mid] = True para no duplicar
+    is_depressed_flag: True si el miembro está marcado como deprimido
     """
     mid = str(member.id)
 
     # precondiciones: debe estar marcado como deprimido y no registrado aún
-    if not is_depressed.get(mid):
+    if not is_depressed_flag:
         return
     if recorded_attempts.get(mid):
         return
@@ -200,46 +201,26 @@ def check_depressive_attempts(
     stats[mid]["depressive_attempts"] = stats[mid].get("depressive_attempts", 0) + 1
 
     solo_secs = 0.0
-
-    # Intentamos leer marcador desde time_entries (dates.json) en la clave especial "_solo"
     if time_entries is not None:
-        solo_container = time_entries.get("_solo", {})
-        solo = solo_container.get(mid)
-        if solo and solo.get("start_time"):
-            try:
-                solo_start = datetime.fromisoformat(solo["start_time"])
-                now = datetime.now()
-                solo_secs = (now - solo_start).total_seconds()
-            except Exception:
-                solo_secs = 0.0
+        solo_data = time_entries.get("_solo", {}).pop(mid, None)
+        if solo_data:
+            # calcular tiempo solo en segundos
+            from datetime import datetime
 
-            # borrar el marcador en time_entries y persistir
-            try:
-                del time_entries["_solo"][mid]
-                if not time_entries.get("_solo"):
-                    # si quedó vacío, quítalo del dict para mantener limpio el JSON
-                    time_entries.pop("_solo", None)
-                _, fechas_path = _get_paths(member)
-                save_json(time_entries, fechas_path)
-            except Exception:
-                pass
+            start_time = datetime.fromisoformat(solo_data["start_time"])
+            solo_secs = (datetime.now() - start_time).total_seconds()
+        _, fechas_path = _get_paths(member)
+        save_json(time_entries, fechas_path)
 
     # Acumular el tiempo en stats
-    stats[mid]["depressive_time"] = stats[mid].get("depressive_time", 0) + solo_secs
+    stats[mid]["depressive_time"] = stats[mid].get("depressive_time", 0.0) + solo_secs
 
-    # Guardar stats
-    try:
-        stats_path, _ = _get_paths(member)
-        save_json(stats, stats_path)
-    except Exception:
-        pass
-
-    # Marcar para que no se repita
+    # marcar intento como registrado
     recorded_attempts[mid] = True
 
     print(
         f"[{member.guild.name}] {member.display_name} ha tenido un episodio depresivo nuevo (total: {stats[mid]['depressive_attempts']}). "
-        f"Ha estado: {stats[mid]['depressive_time']:.2f} segundos solo en total (+ {solo_secs} segundos)."
+        f"Ha estado: {stats[mid]['depressive_time']:.2f} segundos solo en total (+ {solo_secs:.2f} segundos)."
     )
 
 
@@ -366,21 +347,18 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
                 "start_time": datetime.now().isoformat(),
                 "channel_id": getattr(member.voice.channel, "id", None),
             }
-            # persistir
             _, fechas_path = _get_paths(member)
             save_json(time_entries, fechas_path)
 
         print(
-            f"[{member.guild.name}] {member.display_name} se ha marcado como deprimido."
+            f"\033[93m[{member.guild.name}] {member.display_name} se ha marcado como deprimido.\033[0m"
         )
 
     except asyncio.CancelledError:
-        # se canceló antes de tiempo (timer cancelado)
         print(
             f"\033[93m[{member.guild.name}] Temporizador cancelado para {member.display_name} antes de deprimirse (quedaban {time_left}s).\033[0m"
         )
         is_depressed[str(member.id)] = False
-        timers.pop(str(member.id), None)
 
 
 # ======================== #

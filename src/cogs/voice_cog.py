@@ -66,10 +66,9 @@ class VoiceCog(commands.Cog):
 
         if len(after.channel.members) >= 2:
             for m in after.channel.members:
-                self.cancel_timer(m)
-                self.is_depressed[m] = False
-                self.recorded_attempts.pop(m, None)
-
+                await self.cancel_timer(m)
+                self.is_depressed[str(m.id)] = False
+                self.recorded_attempts.pop(str(m.id), None)
                 if m != member:
                     handle_call_data(stats, member, m)
                     save_time(time_entries, member, m, True)
@@ -77,7 +76,6 @@ class VoiceCog(commands.Cog):
             self.start_timer(member, stats, time_entries)
 
     async def member_left(self, member, before):
-        """Maneja la salida de un miembro de un canal de voz."""
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
         print(
             f"\033[91m[{member.guild.name}] {member.display_name} ha salido de {before.channel.name}. "
@@ -88,11 +86,17 @@ class VoiceCog(commands.Cog):
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/dates.json")
 
-        # Si el usuario estaba marcado como deprimido, se consolida su tiempo
+        member_flag = self.is_depressed.get(str(member.id), False)
+
+        await self.cancel_timer(member)
+
+        # Se resetea flag solo si el timer no se completó
+        if not member_flag:
+            self.is_depressed[str(member.id)] = False
+
         check_depressive_attempts(
-            member, self.is_depressed, stats, self.recorded_attempts, time_entries
+            member, member_flag, stats, self.recorded_attempts, time_entries
         )
-        self.cancel_timer(member)
 
         for m in before.channel.members:
             if m != member:
@@ -117,7 +121,7 @@ class VoiceCog(commands.Cog):
                 mid = str(m.id)
                 self.is_depressed[mid] = False
                 self.recorded_attempts.pop(mid, None)
-                self.cancel_timer(m)
+                await self.cancel_timer(m)
                 if m != member:
                     save_time(time_entries, member, m, True)
                     handle_call_data(stats, member, m)
@@ -149,19 +153,20 @@ class VoiceCog(commands.Cog):
             f"\033[93mTemporizador iniciado para {member.display_name} ({self.timeout}s).\033[0m"
         )
 
-    def cancel_timer(self, member):
-        """Cancela y elimina un temporizador activo para un usuario si existe."""
+    async def cancel_timer(self, member):
+        """Cancela y elimina un temporizador activo para un usuario si existe, esperando a que termine la tarea."""
         mid = str(member.id)
-        if mid in self.timers:
+        task = self.timers.pop(mid, None)
+        if task:
+            task.cancel()
             try:
-                self.timers[
-                    mid
-                ].cancel()  # Cancela el temporizador; mensaje en timer_task
+                await task
+            except asyncio.CancelledError:
+                pass
             except Exception as e:
                 print(
                     f"\033[91mError al cancelar temporizador de {member.display_name}: {e}\033[0m"
                 )
-            del self.timers[mid]
 
 
 async def setup(bot):
