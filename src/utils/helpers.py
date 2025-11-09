@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import os
 import shutil
 import httpx
-
+from datetime import datetime
 
 # ---------------- Configuración FastAPI ----------------
 load_dotenv()
@@ -187,8 +187,6 @@ def check_depressive_attempts(
     - borra el marcador de time_entries y guarda ambos JSON
     - marca recorded_attempts[mid] = True para no duplicar
     """
-    import datetime
-
     mid = str(member.id)
 
     # precondiciones: debe estar marcado como deprimido y no registrado aún
@@ -209,8 +207,8 @@ def check_depressive_attempts(
         solo = solo_container.get(mid)
         if solo and solo.get("start_time"):
             try:
-                solo_start = datetime.datetime.fromisoformat(solo["start_time"])
-                now = datetime.datetime.now()
+                solo_start = datetime.fromisoformat(solo["start_time"])
+                now = datetime.now()
                 solo_secs = (now - solo_start).total_seconds()
             except Exception:
                 solo_secs = 0.0
@@ -239,7 +237,6 @@ def check_depressive_attempts(
     # Marcar para que no se repita
     recorded_attempts[mid] = True
 
-    # Log legible
     print(
         f"[{member.guild.name}] {member.display_name} ha tenido un episodio depresivo nuevo (total: {stats[mid]['depressive_attempts']}). "
         f"Ha estado: {stats[mid]['depressive_time']:.2f} segundos solo en total (+ {solo_secs} segundos)."
@@ -251,9 +248,7 @@ def check_depressive_attempts(
 # ======================== #
 def save_time(time_entries, member, channel_member, enter=True):
     """Registra el inicio o fin de una sesión compartida entre dos usuarios."""
-    import datetime
-
-    current_time = datetime.datetime.now().isoformat()
+    current_time = datetime.now().isoformat()
 
     def ensure_entry(a, b):
         time_entries.setdefault(str(a.id), {}).setdefault(str(b.id), {"entries": []})
@@ -283,9 +278,6 @@ def save_time(time_entries, member, channel_member, enter=True):
 def calculate_total_time(time_entries, stats, member, channel_member):
     """Recalcula el tiempo total compartido entre dos usuarios.
     Se mantiene reciprocidad en stats."""
-
-    from datetime import datetime
-
     mid, oid = str(member.id), str(channel_member.id)
 
     if mid not in time_entries or oid not in time_entries[mid]:
@@ -368,8 +360,6 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
 
         # Guardamos el marcador en time_entries (dates.json) para robustez local
         if time_entries is not None:
-            from datetime import datetime
-
             # Estructura: time_entries["_solo"][mid] = {"start_time": iso, "channel_id": <id>}
             time_entries.setdefault("_solo", {})
             time_entries["_solo"][mid] = {

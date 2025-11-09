@@ -67,15 +67,8 @@ class VoiceCog(commands.Cog):
         if len(after.channel.members) >= 2:
             for m in after.channel.members:
                 self.cancel_timer(m)
-                # si el usuario estaba marcado como deprimido, consolidamos su tiempo solo
-                if self.is_depressed.get(str(m.id)):
-                    check_depressive_attempts(
-                        m,
-                        self.is_depressed,
-                        stats,
-                        self.recorded_attempts,
-                        time_entries,
-                    )
+                self.is_depressed[m] = False
+                self.recorded_attempts.pop(m, None)
 
                 if m != member:
                     handle_call_data(stats, member, m)
@@ -95,6 +88,7 @@ class VoiceCog(commands.Cog):
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/dates.json")
 
+        # Si el usuario estaba marcado como deprimido, se consolida su tiempo
         check_depressive_attempts(
             member, self.is_depressed, stats, self.recorded_attempts, time_entries
         )
@@ -123,7 +117,6 @@ class VoiceCog(commands.Cog):
                 mid = str(m.id)
                 self.is_depressed[mid] = False
                 self.recorded_attempts.pop(mid, None)
-
                 self.cancel_timer(m)
                 if m != member:
                     save_time(time_entries, member, m, True)
