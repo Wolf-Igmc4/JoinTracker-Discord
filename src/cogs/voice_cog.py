@@ -101,6 +101,8 @@ class VoiceCog(commands.Cog):
         mid = str(member.id)
 
         member_flag = self.is_depressed.get(mid, False)
+        # Convertimos el bool en dict para la función
+        member_flag_dict = {mid: member_flag}
 
         await self.cancel_timer(member)
 
@@ -109,7 +111,7 @@ class VoiceCog(commands.Cog):
             self.is_depressed[mid] = False
 
         check_depressive_attempts(
-            member, member_flag, stats, self.recorded_attempts, time_entries
+            member, member_flag_dict, stats, self.recorded_attempts, time_entries
         )
 
         updated_users = []
@@ -156,10 +158,22 @@ class VoiceCog(commands.Cog):
                     save_time(time_entries, member, m, True)
                     handle_call_data(stats, member, m)
 
+        # Canal destino tiene exactamente 1 persona
+        elif num_after == 1:
+            self.start_timer(member, time_entries)
+
+        # Canal origen tiene ≥2 miembros
+        if num_before >= 2:
+            for m in before.channel.members:
+                print(f"Actualizando estadísticas para {member} con {m}")
+                if m != member:
+                    save_time(time_entries, member, m, False)
+                    handle_call_data(stats, member, m)
+                    calculate_total_time(time_entries, stats, member, m)
+
         # Canal origen queda con exactamente 1 persona
-        if num_before == 1:
+        elif num_before == 1:
             remaining_member = before.channel.members[0]
-            print(f"EL MIEMBRO RESTANTE ES: {remaining_member}")
             self.start_timer(remaining_member, time_entries)
             save_time(time_entries, member, remaining_member, False)
             calculate_total_time(time_entries, stats, member, remaining_member)

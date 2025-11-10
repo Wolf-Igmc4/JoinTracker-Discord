@@ -178,49 +178,44 @@ def handle_call_data(stats, member, channel_member):
 
 
 def check_depressive_attempts(
-    member, is_depressed_flag, stats, recorded_attempts, time_entries=None
+    member, is_depressed, stats, recorded_attempts, time_entries=None
 ):
     """
-    Consolida un intento depresivo para un miembro:
-    - incrementa stats[mid]['depressive_attempts']
-    - suma el tiempo solo leyendo time_entries['_solo'][mid] (si existe) en stats[mid]['depressive_time']
-    - borra el marcador de time_entries y guarda ambos JSON
-    - marca recorded_attempts[mid] = True para no duplicar
-    is_depressed_flag: True si el miembro está marcado como deprimido
+    Registra un intento depresivo de un usuario si está marcado como deprimido
+    y aún no ha sido registrado, actualizando estadísticas y tiempo solo.
     """
     mid = str(member.id)
 
-    # precondiciones: debe estar marcado como deprimido y no registrado aún
-    if not is_depressed_flag:
-        return
-    if recorded_attempts.get(mid):
+    # Solo procesar si el usuario está deprimido y no registrado aún
+    if not is_depressed.get(mid, False) or recorded_attempts.get(mid):
         return
 
     stats.setdefault(mid, {})
-    # incrementar contador de intentos
     stats[mid]["depressive_attempts"] = stats[mid].get("depressive_attempts", 0) + 1
 
     solo_secs = 0.0
-    if time_entries is not None:
-        solo_data = time_entries.get("_solo", {}).pop(mid, None)
-        if solo_data:
-            # calcular tiempo solo en segundos
-            from datetime import datetime
 
-            start_time = datetime.fromisoformat(solo_data["start_time"])
-            solo_secs = (datetime.now() - start_time).total_seconds()
-        _, fechas_path = _get_paths(member)
-        save_json(time_entries, fechas_path)
+    if time_entries:
+        solo = time_entries.get("_solo", {}).get(mid)
+        if solo and "start_time" in solo:
+            solo_secs = (
+                datetime.now() - datetime.fromisoformat(solo["start_time"])
+            ).total_seconds()
+            # Borrar el marcador y limpiar si queda vacío
+            del time_entries["_solo"][mid]
+            if not time_entries["_solo"]:
+                del time_entries["_solo"]
+            save_json(time_entries, _get_paths(member)[1])
 
-    # Acumular el tiempo en stats
-    stats[mid]["depressive_time"] = stats[mid].get("depressive_time", 0.0) + solo_secs
+    stats[mid]["depressive_time"] = stats[mid].get("depressive_time", 0) + solo_secs
+    save_json(stats, _get_paths(member)[0])
 
-    # marcar intento como registrado
     recorded_attempts[mid] = True
 
     print(
-        f"[{member.guild.name}] {member.display_name} ha tenido un episodio depresivo nuevo (total: {stats[mid]['depressive_attempts']}). "
-        f"Ha estado: {stats[mid]['depressive_time']:.2f} segundos solo en total (+ {solo_secs:.2f} segundos)."
+        f"[{member.guild.name}] {member.display_name} ha tenido un episodio depresivo nuevo "
+        f"(total: {stats[mid]['depressive_attempts']}). Ha estado: {stats[mid]['depressive_time']:.2f} segundos solo "
+        f"(+ {solo_secs:.2f} segundos)."
     )
 
 
