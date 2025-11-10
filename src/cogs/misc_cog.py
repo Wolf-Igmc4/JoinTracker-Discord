@@ -21,8 +21,8 @@ class MiscCog(commands.Cog):
                 description=(
                     "Te ayudo a **rastrear y analizar la actividad en llamadas de voz**.\n\n"
                     "📊 **Comandos principales:**\n"
-                    "• `/call_stats` → Muestra cuántas veces un usuario se ha unido a otro en llamada.\n"
-                    "• `/all_call_stats` → Muestra todas las estadísticas de un usuario.\n"
+                    "• `/datos_llamada` → Muestra cuántas veces un usuario se ha unido a otro en llamada.\n"
+                    "• `/datos_totales_llamada` → Muestra todas las estadísticas de un usuario.\n"
                     "También registro los intentos de hablar en solitario (llamadas donde nadie más se une), "
                     "pero solo se registran cuando sales del canal! También se sigue la misma lógica para guardar\n"
                     "el tiempo entre usuarios :3.\n"

@@ -101,7 +101,7 @@ class CommandsCog(commands.Cog):
         if stats == "same_user":
             await interaction.response.send_message(
                 "¡Tonto! No te selecciones a ti mismo o lo dejes en blanco, QUE EXPLOTO! :(\n"
-                "Usa `/all_call_stats` si quieres ver tus estadísticas con todos los del server con los que interactuaste."
+                "Usa `/datos_totales_llamada` si quieres ver tus estadísticas con todos los del server con los que interactuaste."
             )
             return
         if stats is None:

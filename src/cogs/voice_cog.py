@@ -17,7 +17,7 @@ class VoiceCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.timeout = 150  # Tiempo en segundos para considerar un intento depresivo
+        self.timeout = 600  # Tiempo en segundos para considerar un intento depresivo
         self.timers = {}  # Guarda tareas asyncio activas por usuario
         self.historiales_por_canal = (
             {}
