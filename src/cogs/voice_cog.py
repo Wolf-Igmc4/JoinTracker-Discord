@@ -37,7 +37,13 @@ class VoiceCog(commands.Cog):
                 and after.channel
                 and before.channel.id != after.channel.id
             ):
-                await self.member_moved(member, before, after)
+                # Si se mueve a otro servidor
+                if before.channel.guild.id != after.channel.guild.id:
+                    await self.member_left(member, before)
+                    await self.member_joined(member, after)
+                # Si se mueven en el mismo servidor
+                else:
+                    await self.member_moved(member, before, after)
             # Entrada a canal
             elif not before.channel and after.channel:
                 await self.member_joined(member, after)
