@@ -136,19 +136,24 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
 
 
 @app.post("/github-webhook")
-async def github_webhook(request: Request):
+async def github_webhook(request: Request, x_api_key: str = Header(None)):
     """Webhook que GitHub llama al hacer push. Dispara un volcado de stats automático."""
 
+    # Verificar API_KEY
+    if API_KEY is None or x_api_key != API_KEY:
+        raise HTTPException(
+            status_code=401, detail="No autorizado: clave API inválida."
+        )
+
+    # Verificar firma de GitHub
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
-
-    # Verificamos firma
     if not verify_github_signature(body, signature):
-        raise HTTPException(status_code=401, detail="Invalid GitHub signature")
+        raise HTTPException(status_code=401, detail="Firma de GitHub no válida.")
 
     payload = await request.json()
 
-    # Solo push
+    # Solo se consideran los eventos de push
     event_type = request.headers.get("X-GitHub-Event")
     if event_type != "push":
         return {"status": "ignored", "reason": "not a push event"}
