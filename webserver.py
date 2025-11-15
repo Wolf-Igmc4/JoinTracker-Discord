@@ -139,6 +139,7 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
 @app.post("/github-webhook")
 async def github_webhook(request: Request):
     """Webhook que GitHub llama al hacer push. Dispara un volcado de stats automático."""
+
     # Verificar firma de GitHub
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
