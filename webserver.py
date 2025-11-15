@@ -136,14 +136,8 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
 
 
 @app.post("/github-webhook")
-async def github_webhook(request: Request, x_api_key: str = Header(None)):
+async def github_webhook(request: Request):
     """Webhook que GitHub llama al hacer push. Dispara un volcado de stats automático."""
-
-    # Verificar API_KEY
-    if API_KEY is None or x_api_key != API_KEY:
-        raise HTTPException(
-            status_code=401, detail="No autorizado: clave API inválida."
-        )
 
     # Verificar firma de GitHub
     body = await request.body()
