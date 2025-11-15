@@ -12,6 +12,7 @@ from webserver import app
 from src.utils.helpers import stringify_keys
 import aiohttp
 from datetime import datetime
+import src.bot_instance as bot_instance
 
 # ---------------- Cargar configuración ----------------
 load_dotenv()
@@ -40,7 +41,10 @@ async def root_head():
 
 # ---------------- Discord Bot ----------------
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="/", intents=intents, owner_id=477811183282552854)
+bot_instance.bot = commands.Bot(
+    command_prefix="/", intents=intents, owner_id=477811183282552854
+)
+bot = bot_instance.bot
 
 
 async def restore_stats_per_guild():

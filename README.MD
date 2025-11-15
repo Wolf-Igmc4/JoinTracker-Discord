@@ -2,21 +2,6 @@
 
 JoinTracker es un bot de Discord en Python que registra y monitoriza la actividad de los usuarios en canales de voz y texto. Lo he hecho para mis servidores!
 
-## Estructura del bot
-
-```text
-bot/
-  ├── main.py               # Main bot entry point
-  ├── cogs/                 # Command modules
-  │   ├── __init__.py
-  │   ├── commands_cog.py   # Stats commands
-  │   ├── misc_cog.py       # Miscellaneous commands
-  │   └── voice_cog.py      # Voice channel tracking
-  └── utils/                # Helper utilities
-      ├── __init__.py
-      ├── helpers.py
-      └── json_manager.py   # JSON file management
-
 ## Características
 
 - Registro de uniones y salidas de usuarios.
@@ -40,4 +25,7 @@ pip install -r requirements.txt
 ## Licencia
 
 MIT License
+
+```
+
 ```

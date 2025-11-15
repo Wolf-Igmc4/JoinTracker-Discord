@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, Column, Integer, JSON, TIMESTAMP, String
 from sqlalchemy.ext.declarative import declarative_base
@@ -10,10 +10,17 @@ from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from src.utils.helpers import stringify_keys
+import hmac
+import hashlib
+from src.config import RAIZ_PROYECTO
+from src.utils.json_manager import load_json
+from src.utils.helpers import send_to_fastapi
+import src.bot_instance as bot_instance
 
 # ---------------- Cargar variables de entorno ----------------
 load_dotenv()  # carga .env
 API_KEY = os.getenv("API_KEY")
+GITHUB_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
 
 POSTGRES_USER = os.getenv("DATABASE_USER")
 POSTGRES_PASSWORD = os.getenv("DATABASE_PASSWORD")
@@ -27,6 +34,8 @@ if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB]):
         "Asegúrate de tener DATABASE_USER, DATABASE_PASSWORD, DATABASE_HOST y DATABASE_NAME."
     )
 DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?{DATABASE_SSLMODE}"
+
+bot = bot_instance.bot
 
 # ---------------- SQLAlchemy Setup ----------------
 engine = create_engine(DATABASE_URL, echo=False, future=True)
@@ -55,6 +64,20 @@ app = FastAPI()
 class Payload(BaseModel):
     guild_id: str
     data: dict
+
+
+# ---------------- Funciones auxiliares ----------------
+def verify_github_signature(body: bytes, signature_header: str) -> bool:
+    """Verifica la firma HMAC-SHA256 enviada por GitHub."""
+    if not signature_header:
+        return False
+
+    sha_name, signature = signature_header.split("=", 1)
+    if sha_name != "sha256":
+        return False
+
+    mac = hmac.new(GITHUB_SECRET.encode(), msg=body, digestmod=hashlib.sha256)
+    return hmac.compare_digest(mac.hexdigest(), signature)
 
 
 # ---------------- Endpoints ----------------
@@ -110,6 +133,43 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
             f"\033[93m[WEB][WARN] No se pudo construir la respuesta JSON para {payload.guild_id}: {e}\033[0m"
         )
         return {"status": "guardado", "guild": payload.guild_id, "timestamp": None}
+
+
+@app.post("/github-webhook")
+async def github_webhook(request: Request):
+    """Webhook que GitHub llama al hacer push. Dispara un volcado de stats automático."""
+
+    body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256")
+
+    # Verificamos firma
+    if not verify_github_signature(body, signature):
+        raise HTTPException(status_code=401, detail="Invalid GitHub signature")
+
+    payload = await request.json()
+
+    # Solo push
+    event_type = request.headers.get("X-GitHub-Event")
+    if event_type != "push":
+        return {"status": "ignored", "reason": "not a push event"}
+
+    sent = 0
+    for guild in bot.guilds:
+        gid = str(guild.id)
+        stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
+        if stats_path.exists():
+            call_data = load_json(f"{gid}/stats.json")
+            await send_to_fastapi(call_data, guild_id=guild)
+            sent += 1
+
+    print(f"[GITHUB] Volcado automático completado. Servidores sincronizados: {sent}")
+
+    return {
+        "status": "ok",
+        "synced_guilds": sent,
+        "repo": payload.get("repository", {}).get("full_name"),
+        "ref": payload.get("ref"),
+    }
 
 
 @app.get("/stats/{guild_id}")
