@@ -26,9 +26,9 @@ class SyncCog(commands.Cog):
         if self.flush_eta.is_running():
             self.flush_eta.cancel()
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=48)
     async def flush_task(self):
-        """Loop automático: cada 24h envía los stats de cada servidor si existen."""
+        """Loop automático: cada 48h envía los stats de cada servidor si existen."""
         print("Iniciada copia de seguridad.")
         for guild in self.bot.guilds:
             print(
@@ -40,14 +40,14 @@ class SyncCog(commands.Cog):
                 call_data = load_json(f"{gid}/stats.json")
                 await send_to_fastapi(call_data, guild_id=guild)
 
-        self.next_flush_at = datetime.utcnow() + timedelta(hours=24)
+        self.next_flush_at = datetime.utcnow() + timedelta(hours=48)
 
     @flush_task.before_loop
     async def before_flush_task(self):
-        """Espera a que el bot esté listo antes de iniciar el loop de 24h y fija next_flush_at."""
+        """Espera a que el bot esté listo antes de iniciar el loop de 48h y fija next_flush_at."""
         await self.bot.wait_until_ready()
-        self.next_flush_at = datetime.utcnow() + timedelta(hours=24)
-        await asyncio.sleep(24 * 3600)  # Espera 24h antes del primer envío
+        self.next_flush_at = datetime.utcnow() + timedelta(hours=48)
+        await asyncio.sleep(48 * 3600)  # Espera 48h antes del primer envío
 
     @tasks.loop(hours=6)
     async def flush_eta(self):
