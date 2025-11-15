@@ -36,8 +36,6 @@ if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB]):
     )
 DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?{DATABASE_SSLMODE}"
 
-bot = bot_instance.bot
-
 # ---------------- SQLAlchemy Setup ----------------
 engine = create_engine(DATABASE_URL, echo=False, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -139,6 +137,7 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
 @app.post("/github-webhook")
 async def github_webhook(request: Request):
     """Webhook que GitHub llama al hacer push. Dispara un volcado de stats automático."""
+    bot = bot_instance.bot
 
     # Verificar firma de GitHub
     body = await request.body()
