@@ -139,10 +139,18 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
 @app.post("/github-webhook")
 async def github_webhook(request: Request):
     """Webhook que GitHub llama al hacer push. Dispara un volcado de stats automático."""
-
+    GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
     # Verificar firma de GitHub
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
+
+    print("=== DEBUG GITHUB WEBHOOK ===")
+    print("Body recibido:", body.decode(errors="ignore"))
+    print("Header X-Hub-Signature-256:", signature)
+    print("Secret usado (GITHUB_WEBHOOK_SECRET):", GITHUB_WEBHOOK_SECRET)
+    print("Headers completos:", dict(request.headers))
+    print("=== FIN DEBUG ===\n")
+
     if not verify_github_signature(body, signature):
         raise HTTPException(status_code=401, detail="Firma de GitHub no válida.")
 
