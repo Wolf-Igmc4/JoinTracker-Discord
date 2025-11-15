@@ -437,7 +437,7 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
             if folder and os.path.exists(folder):
                 shutil.rmtree(folder)
         except Exception:
-            pass  # ignoramos errores si no se puede borrar
+            pass
 
         try:
             await user.send(
