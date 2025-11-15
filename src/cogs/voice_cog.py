@@ -1,6 +1,6 @@
 # src/cogs/voice_cog.py
 import asyncio
-from src.utils.json_manager import load_json
+from src.utils.json_manager import load_json, save_json
 from discord.ext import commands
 from src.utils.helpers import (
     handle_call_data,
@@ -10,6 +10,7 @@ from src.utils.helpers import (
     timer_task,
     check_depressive_attempts,
 )
+from datetime import datetime
 
 
 class VoiceCog(commands.Cog):
@@ -56,12 +57,6 @@ class VoiceCog(commands.Cog):
     async def member_joined(self, member, after):
         """Maneja la entrada de un miembro a un canal de voz."""
 
-        # Se desmarcan flags de depresión (por si tenía alguno de antes)
-        mid = str(member.id)
-        if self.is_depressed.get(mid, False):
-            self.is_depressed[mid] = False
-            self.recorded_attempts.pop(mid, None)
-
         update_channel_history(self.historiales_por_canal, after.channel.id, 1)
 
         print(
@@ -74,25 +69,50 @@ class VoiceCog(commands.Cog):
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/dates.json")
 
+        # Se desmarcan flags de depresión (por si tenía alguno de antes)
+        mid = str(member.id)
+        if self.is_depressed.get(mid, False):
+            self.is_depressed[mid] = False
+            self.recorded_attempts.pop(mid, None)
+        self._clear_solo_depressive(mid, time_entries)
+
         num_members = len(after.channel.members)
+        stats_changed = False
 
         # Canal con ≥2 miembros
         if num_members >= 2:
+
             for m in after.channel.members:
                 await self.cancel_timer(m)
                 self.is_depressed[str(m.id)] = False
                 self.recorded_attempts.pop(str(m.id), None)
+
+                # Si ese miembro tenía un periodo "total solo" abierto, lo cerramos y acumulamos en stats
+                elapsed = self._end_total_solo(time_entries, stats, m)
+                if elapsed:
+                    stats_changed = True
+
                 if m != member:
                     handle_call_data(stats, member, m)
                     save_time(time_entries, member, m, True)
 
-        # Canal con 1 miembro
+        # Canal con 1 miembro (queda solo)
         elif num_members == 1:
+            # Registrar inicio de tiempo total solo en dates.json
+            if self._start_total_solo(time_entries, member):
+                stats_changed = True
+
+            # Iniciar temporizador de depresión
             self.start_timer(member, time_entries)
 
         # Canal sin miembros y otros casos
         else:
             pass
+
+        # Guardamos dates y stats.json
+        if stats_changed:
+            save_json(stats, f"{guild.id}/stats.json")
+        save_json(time_entries, f"{guild.id}/dates.json")
 
     async def member_left(self, member, before):
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
@@ -106,10 +126,13 @@ class VoiceCog(commands.Cog):
         time_entries = load_json(f"{guild.id}/dates.json")
         mid = str(member.id)
 
-        member_flag = self.is_depressed.get(mid, False)
+        stats_changed = False
+
         # Convertimos el bool en dict para la función
+        member_flag = self.is_depressed.get(mid, False)
         member_flag_dict = {mid: member_flag}
 
+        # Cancelamos timer del que sale (si existía)
         await self.cancel_timer(member)
 
         # Se resetea flag solo si el timer no se completó
@@ -120,6 +143,11 @@ class VoiceCog(commands.Cog):
             member, member_flag_dict, stats, self.recorded_attempts, time_entries
         )
 
+        # Si el miembro que sale tenía un _solo_total_start en time_entries, lo finalizamos
+        elapsed = self._end_total_solo(time_entries, stats, member)
+        if elapsed:
+            stats_changed = True
+
         updated_users = []
 
         for m in before.channel.members:
@@ -128,10 +156,25 @@ class VoiceCog(commands.Cog):
                 save_time(time_entries, member, m, False)
                 calculate_total_time(time_entries, stats, member, m)
 
+        # 2) Si después de la salida queda exactamente 1 miembro (queda solo)
+        if len(before.channel.members) == 1:
+            remaining = before.channel.members[0]
+            # Registrar inicio de tiempo total solo en dates.json
+            if self._start_total_solo(time_entries, remaining):
+                stats_changed = True
+
+            # Iniciar temporizador de depresión (DESHABILITADO, NO NECESARIO SEGÚN DISEÑO)
+            # self.start_timer(remaining, time_entries)
+
         if updated_users:
             print(
                 f"[{member.guild.name}] Actualizado el tiempo con los usuarios: {', '.join(updated_users)}"
             )
+
+        # Guardamos dates y stats.json
+        if stats_changed:
+            save_json(stats, f"{guild.id}/stats.json")
+        save_json(time_entries, f"{guild.id}/dates.json")
 
     async def member_moved(self, member, before, after):
         """Maneja cuando un usuario se mueve de un canal a otro."""
@@ -153,19 +196,32 @@ class VoiceCog(commands.Cog):
         stats = load_json(f"{guild.id}/stats.json")
         time_entries = load_json(f"{guild.id}/dates.json")
 
-        # Canal destino tiene ≥2 miembros
+        stats_changed = False
+
+        # Canal destino tiene ≥2 miembros: cancelar timers y, por si alguno tenía start en stats, finalizarlo
         if num_after >= 2:
             for m in after.channel.members:
-                mid = str(m.id)
-                self.is_depressed[mid] = False
-                self.recorded_attempts.pop(mid, None)
+                midm = str(m.id)
+                self.is_depressed[midm] = False
+                self.recorded_attempts.pop(midm, None)
                 await self.cancel_timer(m)
+
+                # Si ese miembro tenía _solo_total_start en stats, finalizamos
+                elapsed = self._end_total_solo(time_entries, stats, m)
+                if elapsed:
+                    stats_changed = True
+
                 if m != member:
                     save_time(time_entries, member, m, True)
                     handle_call_data(stats, member, m)
 
-        # Canal destino tiene exactamente 1 persona
+        # Canal destino tiene exactamente 1 persona (queda solo)
         elif num_after == 1:
+            # Registrar inicio de tiempo total solo en dates.json
+            if self._start_total_solo(time_entries, member):
+                stats_changed = True
+
+            # Iniciar temporizador de depresión
             self.start_timer(member, time_entries)
 
         # Canal origen tiene ≥2 miembros
@@ -177,10 +233,17 @@ class VoiceCog(commands.Cog):
                     handle_call_data(stats, member, m)
                     calculate_total_time(time_entries, stats, member, m)
 
-        # Canal origen queda con exactamente 1 persona
+        # Canal origen queda con exactamente 1 persona (queda solo)
         elif num_before == 1:
             remaining_member = before.channel.members[0]
+
+            # Registrar inicio del tiempo solo para el que queda
+            if self._start_total_solo(time_entries, remaining_member):
+                stats_changed = True
+
+            # Iniciar temporizador de depresión
             self.start_timer(remaining_member, time_entries)
+
             save_time(time_entries, member, remaining_member, False)
             calculate_total_time(time_entries, stats, member, remaining_member)
             print(
@@ -190,6 +253,11 @@ class VoiceCog(commands.Cog):
         # Canal sin miembros y otros casos
         else:
             pass
+
+        # Guardamos dates y stats.json
+        if stats_changed:
+            save_json(stats, f"{guild.id}/stats.json")
+        save_json(time_entries, f"{guild.id}/dates.json")
 
     def start_timer(self, member, time_entries):
         mid = str(member.id)
@@ -209,6 +277,74 @@ class VoiceCog(commands.Cog):
         print(
             f"\033[93m[{member.guild.name}] Temporizador iniciado para marcar a {member.display_name} con depresión.\033[0m"
         )
+
+    # Helpers
+    def _ensure_user_stats(self, stats, mid):
+        """Asegura que exista la entrada stats[mid]."""
+        if mid not in stats:
+            stats[mid] = {}
+
+    def _start_total_solo(self, time_entries, member):
+        """
+        Marca el inicio del periodo 'total solo' para member en dates.json (time_entries).
+        """
+        mid = str(member.id)
+        if mid not in time_entries:
+            time_entries[mid] = {}
+
+        if not time_entries[mid].get("_solo_total_start"):
+            time_entries[mid]["_solo_total_start"] = datetime.now().isoformat()
+            time_entries[mid]["_solo_total_channel"] = getattr(
+                member.voice.channel, "id", None
+            )
+            return True
+
+        return False
+
+    def _end_total_solo(self, time_entries, stats, member):
+        """
+        Cierra el periodo 'total solo' leyendo de dates.json (time_entries)
+        y suma el resultado en stats.json (stats).
+        """
+        mid = str(member.id)
+        start_iso = time_entries.get(mid, {}).get("_solo_total_start")
+
+        if start_iso:
+            try:
+                start_dt = datetime.fromisoformat(start_iso)
+            except Exception:
+                # Formato raro → limpiar y no acumular
+                time_entries[mid]["_solo_total_start"] = None
+                return 0
+
+            elapsed = (datetime.now() - start_dt).total_seconds()
+
+            # Asegurar existencia en stats para el contador de tiempo total
+            self._ensure_user_stats(stats, mid)
+
+            stats[mid]["total_solo_time"] = (
+                stats[mid].get("total_solo_time", 0) + elapsed
+            )
+
+            # Reseteo tras cerrar el periodo
+            time_entries[mid].pop("_solo_total_start", None)
+            time_entries[mid].pop("_solo_total_channel", None)
+
+            return elapsed
+
+        return 0
+
+    def _clear_solo_depressive(self, user_id, time_entries):
+        """
+        Limpia los marcadores de depresión de un usuario si ya no está solo.
+        """
+        entry = time_entries.get(str(user_id))
+        if entry:
+            entry.pop("_solo_depressive_start", None)
+            entry.pop("_solo_depressive_channel_id", None)
+            # Si no queda nada en el dict del usuario, lo eliminamos
+            if not entry:
+                time_entries.pop(str(user_id))
 
     async def cancel_timer(self, member):
         """Cancela y elimina un temporizador activo para un usuario si existe, esperando a que termine la tarea."""

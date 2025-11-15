@@ -174,63 +174,80 @@ class CommandsCog(commands.Cog):
         for uid in uids_to_process:
             stats_cache[uid] = await self._get_bidirectional_stats(call_data, mid, uid)
 
-        # ==== Estadísticas generales ====
-        if appears_as_target:
-            depressive_attempts = call_data[mid].get("depressive_attempts", 0)
-            depressive_time = call_data[mid].get("depressive_time", 0)
-            if depressive_attempts:
-                msg += f"🔹 **Estadísticas generales**\n"
-                msg += f"   • Intentos depresivos: {depressive_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(depressive_time)}.\n"
-            msg += "\n   **Veces y tiempo total compartido con otros usuarios:**\n"
-            for uid in call_data[mid]:
-                if uid in ["depressive_attempts", "depressive_time"]:
-                    continue
-                stats = stats_cache[uid]
-                user_obj = stats["user_obj"]
-                name_display = (
-                    user_obj.display_name
-                    if user_obj
-                    else f"[Usuario desconocido {uid}]"
+        # ====== Etadísticas generales ======
+        try:
+            if appears_as_target:
+                depressive_attempts = call_data.get(mid, {}).get(
+                    "depressive_attempts", 0
                 )
-                msg += f"   • {name_display} → {self.fmt_count(stats['total_calls'])}. Tiempo juntos: 🕒 {self.fmt_time(stats['total_seconds'])}.\n"
-            msg += "\n"
-
-        # ==== Otros se unieron al usuario ====
-        if appears_as_target:
-            msg += f"🔹 **Veces que otros se unieron a {member.display_name}:**\n"
-            for uid in call_data[mid]:
-                if uid in ["depressive_attempts", "depressive_time"]:
-                    continue
-                stats = stats_cache[uid]
-                user_obj = stats["user_obj"]
-                name_display = (
-                    user_obj.display_name
-                    if user_obj
-                    else f"[Usuario desconocido {uid}]"
-                )
-                msg += f"   • {name_display} → {self.fmt_count(stats['calls_ab'])}.\n"
-            msg += "\n"
-
-        # ==== Usuario se unió a otros ====
-        if appears_as_source:
-            msg += f"🔹 **Veces que {member.display_name} se unió a otros:**\n"
-            for target_id, inner in call_data.items():
-                if mid in inner and target_id not in [
-                    "depressive_attempts",
-                    "depressive_time",
-                ]:
-                    stats = stats_cache[target_id]
-                    user_obj = stats["user_obj"]
+                depressive_time = call_data.get(mid, {}).get("depressive_time", 0)
+                total_solo_time = call_data.get(mid, {}).get("total_solo_time", 0)
+                if depressive_attempts:
+                    msg += f"🔹 **Estadísticas generales**\n"
+                    msg += f"   • Tiempo a solas total: {self.fmt_time(total_solo_time)}. Todo ese rato ha estado esperando a alguien, o pensando... o llorando desconsoladamente.\n"
+                    msg += f"   • Intentos depresivos: {depressive_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(depressive_time)}.\n"
+                msg += "\n   **Veces y tiempo total compartido con otros usuarios:**\n"
+                for uid in call_data.get(mid, {}):
+                    if uid in ["depressive_attempts", "depressive_time"]:
+                        continue
+                    stats = stats_cache.get(uid)
+                    if stats is None:
+                        continue
+                    user_obj = stats.get("user_obj")
                     name_display = (
                         user_obj.display_name
                         if user_obj
-                        else f"[Usuario desconocido {target_id}]"
+                        else f"[Usuario desconocido {uid}]"
                     )
-                    msg += (
-                        f"   • {name_display} → {self.fmt_count(stats['calls_ba'])}.\n"
-                    )
+                    msg += f"   • {name_display} → {self.fmt_count(stats.get('total_calls', 0))}. Tiempo juntos: 🕒 {self.fmt_time(stats.get('total_seconds', 0))}.\n"
+                msg += "\n"
 
-        await interaction.followup.send(msg)
+            # ==== Otros se unieron al usuario ====
+            if appears_as_target:
+                msg += f"🔹 **Veces que otros se unieron a {member.display_name}:**\n"
+                for uid in call_data.get(mid, {}):
+                    if uid in ["depressive_attempts", "depressive_time"]:
+                        continue
+                    stats = stats_cache.get(uid)
+                    if stats is None:
+                        continue
+                    user_obj = stats.get("user_obj")
+                    name_display = (
+                        user_obj.display_name
+                        if user_obj
+                        else f"[Usuario desconocido {uid}]"
+                    )
+                    msg += f"   • {name_display} → {self.fmt_count(stats.get('calls_ab', 0))}.\n"
+                msg += "\n"
+
+            # ==== Usuario se unió a otros ====
+            if appears_as_source:
+                msg += f"🔹 **Veces que {member.display_name} se unió a otros:**\n"
+                for target_id, inner in call_data.items():
+                    if inner is None:
+                        continue
+                    if mid in inner and target_id not in [
+                        "depressive_attempts",
+                        "depressive_time",
+                    ]:
+                        stats = stats_cache.get(target_id)
+                        if stats is None:
+                            continue
+                        user_obj = stats.get("user_obj")
+                        name_display = (
+                            user_obj.display_name
+                            if user_obj
+                            else f"[Usuario desconocido {target_id}]"
+                        )
+                        msg += f"   • {name_display} → {self.fmt_count(stats.get('calls_ba', 0))}.\n"
+
+            await interaction.followup.send(msg)
+
+        except Exception as e:
+            await interaction.followup.send(
+                "Se produjo un error al generar las estadísticas."
+            )
+            print(f"[ERROR] Al generar all_call_stats: {e}")
 
     @app_commands.command(
         name="descargar_json",

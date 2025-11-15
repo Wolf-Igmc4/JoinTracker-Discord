@@ -190,26 +190,28 @@ def check_depressive_attempts(
     if not is_depressed.get(mid, False) or recorded_attempts.get(mid):
         return
 
+    # Inicializar stats del usuario
     stats.setdefault(mid, {})
     stats[mid]["depressive_attempts"] = stats[mid].get("depressive_attempts", 0) + 1
 
     solo_secs = 0.0
 
-    if time_entries:
-        solo = time_entries.get("_solo", {}).get(mid)
-        if solo and "start_time" in solo:
+    if time_entries and mid in time_entries:
+        start_iso = time_entries[mid].get("_solo_depressive_start")
+        if start_iso:
             solo_secs = (
-                datetime.now() - datetime.fromisoformat(solo["start_time"])
+                datetime.now() - datetime.fromisoformat(start_iso)
             ).total_seconds()
-            # Borrar el marcador y limpiar si queda vacío
-            del time_entries["_solo"][mid]
-            if not time_entries["_solo"]:
-                del time_entries["_solo"]
+            # Limpiar los campos de tiempo depresivo
+            time_entries[mid].pop("_solo_depressive_start", None)
+            time_entries[mid].pop("_solo_depressive_channel_id", None)
             save_json(time_entries, _get_paths(member)[1])
 
+    # Acumular tiempo solo en stats
     stats[mid]["depressive_time"] = stats[mid].get("depressive_time", 0) + solo_secs
     save_json(stats, _get_paths(member)[0])
 
+    # Marcar intento registrado
     recorded_attempts[mid] = True
 
     print(
@@ -319,9 +321,10 @@ def update_channel_history(historiales_por_canal, channel_id, cambio):
 async def timer_task(member, is_depressed, timers, timeout=150, time_entries=None):
     """
     Marca un usuario como deprimido si permanece solo demasiado tiempo.
-    Si se pasa time_entries, guarda en dates.json (time_entries) la marca de solo_start.
+    Guarda en time_entries (dates.json) la marca de solo depresivo dentro del usuario.
     """
     time_left = timeout
+    mid = str(member.id)
     try:
         while time_left > 0:
             await asyncio.sleep(1)
@@ -331,17 +334,16 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
                 )
             time_left -= 1
 
-        mid = str(member.id)
         is_depressed[mid] = True
 
-        # Guardamos el marcador en time_entries (dates.json) para robustez local
+        # Guardamos el marcador dentro del usuario en time_entries
         if time_entries is not None:
-            # Estructura: time_entries["_solo"][mid] = {"start_time": iso, "channel_id": <id>}
-            time_entries.setdefault("_solo", {})
-            time_entries["_solo"][mid] = {
-                "start_time": datetime.now().isoformat(),
-                "channel_id": getattr(member.voice.channel, "id", None),
-            }
+            user_entry = time_entries.setdefault(mid, {})
+            user_entry["_solo_depressive_start"] = datetime.now().isoformat()
+            user_entry["_solo_depressive_channel_id"] = getattr(
+                member.voice.channel, "id", None
+            )
+
             _, fechas_path = _get_paths(member)
             save_json(time_entries, fechas_path)
 
@@ -353,7 +355,6 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
         print(
             f"\033[93m[{member.guild.name}] Temporizador cancelado para {member.display_name} antes de deprimirse (quedaban {time_left}s).\033[0m"
         )
-        mid = str(member.id)
         is_depressed[mid] = False
 
 
