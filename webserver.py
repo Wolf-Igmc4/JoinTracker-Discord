@@ -88,7 +88,7 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     session = SessionLocal()
-    ts = None  # Timestamp del registro creado
+    ts = None  # Timestamp del registro
     try:
         # Sanitización de las claves del JSON para garantizar que sean cadenas
         safe_data = stringify_keys(payload.data)
