@@ -118,10 +118,10 @@ class CommandsCog(commands.Cog):
 
         # === Mensaje final ===
         msg = (
-            f"📞 Estadísticas de llamada entre **{user1.display_name}** y **{user2.display_name}:**\n\n"
-            f"🔹 **{user1.display_name} → {user2.display_name}:** {self.fmt_count(calls_user1_to_user2)}\n"
-            f"🔹 **{user2.display_name} → {user1.display_name}:** {self.fmt_count(calls_user2_to_user1)}\n"
-            f"🕒 **Tiempo total compartido en llamada:** {self.fmt_time(total_seconds)}"
+            f"📊 **Estadísticas de llamada entre {user1.display_name} y {user2.display_name}:**\n\n"
+            f"🔹 {user1.display_name} → {user2.display_name}: {self.fmt_count(calls_user1_to_user2)}.\n"
+            f"🔹 {user2.display_name} → {user1.display_name}: {self.fmt_count(calls_user2_to_user1)}.\n"
+            f"🕒 Tiempo total compartido en llamada: {self.fmt_time(total_seconds)}."
         )
 
         await interaction.response.send_message(msg)
@@ -199,7 +199,7 @@ class CommandsCog(commands.Cog):
                         if user_obj
                         else f"[Usuario desconocido {uid}]"
                     )
-                    msg += f"   • {name_display} → {self.fmt_count(stats.get('total_calls', 0))}. Tiempo juntos: 🕒 {self.fmt_time(stats.get('total_seconds', 0))}.\n"
+                    msg += f"   • {name_display} → {self.fmt_count(stats.get('total_calls', 0))}. 🕒 Tiempo juntos: {self.fmt_time(stats.get('total_seconds', 0))}.\n"
                 msg += "\n"
 
             # ==== Otros se unieron al usuario ====
