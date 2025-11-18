@@ -14,11 +14,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 import src.bot_instance as bot_instance
-from src.config import RAIZ_PROYECTO
-from src.utils.helpers import stringify_keys, send_to_fastapi
-from src.utils.json_manager import load_json
+from src.utils.helpers import stringify_keys, sync_all_guilds
 
-# ---------------- Cargar variables de entorno ----------------
+# ========= Cargar variables de entorno =========
 load_dotenv()  # carga .env
 API_KEY = os.getenv("API_KEY")
 GITHUB_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
@@ -36,13 +34,13 @@ if not all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB]):
     )
 DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?{DATABASE_SSLMODE}"
 
-# ---------------- SQLAlchemy Setup ----------------
+# ========= Inicio de SQLAlchemy =========
 engine = create_engine(DATABASE_URL, echo=False, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 
-# ---------------- Modelo de tabla ----------------
+# ========= Modelo de tabla =========
 # ahora incluimos guild_id para poder filtrar por servidor
 class JSONData(Base):
     __tablename__ = "json_data"
@@ -55,17 +53,17 @@ class JSONData(Base):
 # crear tabla si no existe
 Base.metadata.create_all(bind=engine)
 
-# ---------------- Instancia FastAPI ----------------
+# ========= Instancia FastAPI =========
 app = FastAPI()
 
 
-# ---------------- Modelos de entrada ----------------
+# ========= Modelos de entrada =========
 class Payload(BaseModel):
     guild_id: str
     data: dict
 
 
-# ---------------- Funciones auxiliares ----------------
+# ========= Funciones auxiliares =========
 def verify_github_signature(body: bytes, signature_header: str) -> bool:
     """Verifica la firma HMAC-SHA256 enviada por GitHub."""
     if not signature_header:
@@ -79,7 +77,7 @@ def verify_github_signature(body: bytes, signature_header: str) -> bool:
     return hmac.compare_digest(mac.hexdigest(), signature)
 
 
-# ---------------- Endpoints ----------------
+# ========= Endpoints =========
 @app.post("/save-json")
 async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
     # Verificación de la clave API para autenticar al cliente y prevenir accesos no autorizados
@@ -137,7 +135,9 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
 @app.post("/github-webhook")
 async def github_webhook(request: Request):
     """Webhook que GitHub llama al hacer push. Dispara un volcado de stats automático."""
-    bot = bot_instance.bot
+    print(
+        f"\033[93m[GITHUB] Detectado push en GitHub. Volcado automático iniciado.\033[0m"
+    )
 
     # Verificar firma de GitHub
     body = await request.body()
@@ -148,21 +148,17 @@ async def github_webhook(request: Request):
 
     payload = await request.json()
 
-    # Solo se consideran los eventos de push
+    # Verificar evento push
     event_type = request.headers.get("X-GitHub-Event")
     if event_type != "push":
         return {"status": "ignored", "reason": "not a push event"}
 
-    sent = 0
-    for guild in bot.guilds:
-        gid = str(guild.id)
-        stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
-        if stats_path.exists():
-            call_data = load_json(f"{gid}/stats.json")
-            await send_to_fastapi(call_data, guild_id=guild)
-            sent += 1
+    # Ejecutar volcado
+    sent = await sync_all_guilds(bot_instance.bot)
 
-    print(f"[GITHUB] Volcado automático completado. Servidores sincronizados: {sent}")
+    print(
+        f"\033[93m[GITHUB] ✅ Volcado automático completado. Servidores sincronizados: {sent}\033[0m"
+    )
 
     return {
         "status": "ok",

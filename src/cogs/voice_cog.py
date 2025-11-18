@@ -268,7 +268,6 @@ class VoiceCog(commands.Cog):
             timer_task(
                 member,
                 self.is_depressed,
-                self.timers,
                 self.timeout,
                 time_entries,
             )

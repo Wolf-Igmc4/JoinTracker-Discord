@@ -1,20 +1,22 @@
 # main.py
 
-import os
 import asyncio
 import json
-from dotenv import load_dotenv
+import os
+from datetime import datetime
+
+import aiohttp
 import discord
 from discord.ext import commands
+from dotenv import load_dotenv
 import uvicorn
-from src.config import RAIZ_PROYECTO
-from webserver import app
-from src.utils.helpers import stringify_keys
-import aiohttp
-from datetime import datetime
-import src.bot_instance as bot_instance
 
-# ---------------- Cargar configuración ----------------
+import src.bot_instance as bot_instance
+from src.config import RAIZ_PROYECTO
+from src.utils.helpers import stringify_keys, sync_all_guilds
+from webserver import app
+
+# ========= Cargar configuración =========
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 PORT = int(os.getenv("PORT", 8000))
@@ -24,10 +26,7 @@ if not TOKEN:
     raise ValueError("No se encontró TOKEN de Discord en el .env")
 
 
-# ---------------- FastAPI ----------------
-# Importar FastAPI completa con endpoints de webserver.py
-
-
+# ========= FastAPI =========
 # Control de salud del servidor
 @app.get("/")
 async def root():
@@ -39,7 +38,7 @@ async def root_head():
     return {"status": "ok"}
 
 
-# ---------------- Discord Bot ----------------
+# ========= Discord Bot =========
 intents = discord.Intents.all()
 bot_instance.bot = commands.Bot(
     command_prefix="/", intents=intents, owner_id=477811183282552854
@@ -130,15 +129,43 @@ async def on_ready():
     bot.loop.create_task(restore_stats_per_guild())
 
 
-# ---------------- Función principal ----------------
+# ========= Funciones de apagado =========
+async def save_before_close():
+    """
+    Función ejecutada cuando se detecta señal de apagado.
+    """
+    print("🚨 Apagado detectado: iniciando guardado a BBDD 🚨")
+
+    try:
+        await sync_all_guilds(bot)
+        print("✅ [SHUTDOWN] Datos guardados y sincronizados correctamente.")
+    except Exception as e:
+        print(f"❌ [SHUTDOWN] Error crítico guardando datos: {e}")
+
+
+# ========= Función principal =========
 async def main():
     config = uvicorn.Config(
         app, host="0.0.0.0", port=PORT, log_level="info", loop="asyncio"
     )
     server = uvicorn.Server(config)
 
-    # Ejecutar bot y FastAPI juntos
-    await asyncio.gather(bot.start(TOKEN), server.serve())
+    try:
+        # Ejecutar bot y FastAPI juntos
+        await asyncio.gather(bot.start(TOKEN), server.serve())
+
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        # Capturar Ctrl+C o señal de parada de Koyeb
+        print("\nSeñal de interrupción recibida. Cerrando el bot...")
+
+    finally:
+        # 1. Guardar datos antes de cerrar
+        await save_before_close()
+
+        # 2. Cerrar bot
+        if not bot.is_closed():
+            await bot.close()
+            print("🐉 JoinTracker desconectado.")
 
 
 if __name__ == "__main__":

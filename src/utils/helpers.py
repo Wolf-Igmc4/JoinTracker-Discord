@@ -8,18 +8,18 @@ from datetime import datetime
 from dotenv import load_dotenv
 import httpx
 
-from .json_manager import save_json
+from src.config import RAIZ_PROYECTO
+
+from .json_manager import load_json, save_json
 
 
-# ---------------- Configuración FastAPI ----------------
+# ========= Configuración FastAPI =========
 load_dotenv()
 API_URL = os.getenv("API_URL")
 API_KEY = os.getenv("API_KEY", None)
 
 
-# src/utils/helpers.py
-
-
+# ========= FUNCIONES DE GUARDADO Y RED =========
 def stringify_keys(obj):
     """
     Recorre recursivamente un objeto (diccionarios y listas) y asegura que
@@ -152,9 +152,31 @@ def _get_paths(member):
     return f"{gid}/stats.json", f"{gid}/dates.json"
 
 
-# ============================== #
-#  MANEJO DE EVENTOS DE LLAMADA  #
-# ============================== #
+async def sync_all_guilds(bot):
+    """
+    Recorre todos los servidores del bot, carga sus stats.json y los envía a la API.
+    Retorna el número de servidores sincronizados exitosamente.
+    """
+    sent = 0
+    print(f"🔄 Iniciando sincronización de {len(bot.guilds)} servidores...")
+
+    for guild in bot.guilds:
+        gid = str(guild.id)
+        stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
+
+        if stats_path.exists():
+            try:
+                # Cargar datos
+                call_data = load_json(f"{gid}/stats.json")
+                # Enviar a FastAPI
+                await send_to_fastapi(call_data, guild_id=guild)
+                sent += 1
+            except Exception as e:
+                print(f"   ❌ Error sincronizando guild {gid}: {e}")
+    return sent
+
+
+# ========= MANEJO DE EVENTOS DE LLAMADA =========
 def handle_call_data(stats, member, channel_member):
     """Actualiza las estadísticas de llamadas entre dos usuarios."""
     joiner_id = str(member.id)  # ID del que entra
@@ -224,9 +246,7 @@ def check_depressive_attempts(
     )
 
 
-# ======================== #
-#   MANEJO DE TIEMPO VC    #
-# ======================== #
+# ========= MANEJO DE TIEMPO VC =========
 def save_time(time_entries, member, channel_member, enter=True):
     """Registra el inicio o fin de una sesión compartida entre dos usuarios."""
     current_time = datetime.now().isoformat()
@@ -296,9 +316,7 @@ def calculate_total_time(time_entries, stats, member, channel_member):
     save_json(stats, stats_path)
 
 
-# ======================== #
-#      HISTORIAL CANAL     #
-# ======================== #
+# ========= HISTORIAL DE CANALES =========
 def update_channel_history(historiales_por_canal, channel_id, cambio):
     """
     Actualiza el historial de miembros de un canal de voz.
@@ -318,10 +336,8 @@ def update_channel_history(historiales_por_canal, channel_id, cambio):
     )
 
 
-# ======================== #
-#       TEMPORIZADOR       #
-# ======================== #
-async def timer_task(member, is_depressed, timers, timeout=150, time_entries=None):
+# ========= TEMPORIZADOR =========
+async def timer_task(member, is_depressed, timeout=150, time_entries=None):
     """
     Marca un usuario como deprimido si permanece solo demasiado tiempo.
     Guarda en time_entries (dates.json) la marca de solo depresivo dentro del usuario.
@@ -361,9 +377,7 @@ async def timer_task(member, is_depressed, timers, timeout=150, time_entries=Non
         is_depressed[mid] = False
 
 
-# ======================== #
-#    ACTUALIZADOR JSON     #
-# ======================== #
+# ========= ACTUALIZACIÓN JSON =========
 async def update_json_file(bot, interaction, filename, global_vars: dict, timeout=60.0):
     allowed_files = ["stats.json", "dates.json"]
     if filename not in allowed_files:
@@ -434,7 +448,7 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
         os.makedirs(os.path.dirname(write_path) or ".", exist_ok=True)
         save_json(new_data, write_path)
 
-        # Borrar la carpeta temporal si quieres limpiar
+        # Borrar la carpeta temporal
         try:
             folder = os.path.dirname(write_path)
             if folder and os.path.exists(folder):

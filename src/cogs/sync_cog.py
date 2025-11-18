@@ -7,7 +7,7 @@ from discord.ext import commands, tasks
 from discord import app_commands, Interaction
 from src.config import RAIZ_PROYECTO
 from src.utils.json_manager import load_json
-from src.utils.helpers import send_to_fastapi
+from src.utils.helpers import send_to_fastapi, sync_all_guilds
 
 
 class SyncCog(commands.Cog):
@@ -91,22 +91,13 @@ class SyncCog(commands.Cog):
                 ephemeral=True,
             )
             return
+
         print("Volcado de bases de datos llamada.")
         await interaction.response.defer(ephemeral=True)
 
-        sent = 0
-        for guild in self.bot.guilds:
-            gid = str(guild.id)
-            stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
-            if stats_path.exists():
-                call_data = load_json(f"{gid}/stats.json")
-                await send_to_fastapi(call_data, guild_id=guild)
-                sent += 1
+        sent = await sync_all_guilds(self.bot)
 
-        if sent == 1:
-            msg = "✅ Volcado manual completado — 1 servidor sincronizado con base de datos remota."
-        else:
-            msg = f"✅ Volcado manual completado — {sent} servidores sincronizados con base de datos remota."
+        msg = f"✅ Volcado manual completado — Servidores sincronizados: {sent}."
 
         await interaction.followup.send(msg, ephemeral=True)
 
