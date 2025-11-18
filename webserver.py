@@ -4,6 +4,7 @@ import os
 import hmac
 import hashlib
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -75,6 +76,23 @@ def verify_github_signature(body: bytes, signature_header: str) -> bool:
 
     mac = hmac.new(GITHUB_SECRET.encode(), msg=body, digestmod=hashlib.sha256)
     return hmac.compare_digest(mac.hexdigest(), signature)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    print("\n🚨 [LIFESPAN] Apagado detectado. Verificando datos pendientes...")
+    try:
+        if bot_instance.bot and bot_instance.bot.is_ready():
+            # force=False: Si el webhook guardó hace poco, no se guardan datos.
+            await sync_all_guilds(bot_instance.bot, force=False)
+        else:
+            print("⚠️ Bot no listo, saltando guardado.")
+    except Exception as e:
+        print(f"❌ Error crítico en cierre: {e}")
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 # ========= Endpoints =========

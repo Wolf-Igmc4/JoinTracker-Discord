@@ -145,27 +145,15 @@ async def save_before_close():
 
 # ========= Función principal =========
 async def main():
+    # Configuración estándar
     config = uvicorn.Config(
         app, host="0.0.0.0", port=PORT, log_level="info", loop="asyncio"
     )
     server = uvicorn.Server(config)
 
-    try:
-        # Ejecutar bot y FastAPI juntos
-        await asyncio.gather(bot.start(TOKEN), server.serve())
-
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        # Capturar Ctrl+C o señal de parada de Koyeb
-        print("\nSeñal de interrupción recibida. Cerrando el bot...")
-
-    finally:
-        # 1. Guardar datos antes de cerrar
-        await save_before_close()
-
-        # 2. Cerrar bot
-        if not bot.is_closed():
-            await bot.close()
-            print("🐉 JoinTracker desconectado.")
+    # Uvicorn gestionará el cierre y llamará al lifespan de webserver.py
+    async with bot_instance.bot:
+        await asyncio.gather(bot_instance.bot.start(TOKEN), server.serve())
 
 
 if __name__ == "__main__":
