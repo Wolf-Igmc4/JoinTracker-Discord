@@ -4,6 +4,7 @@ import os
 import json
 import shutil
 from datetime import datetime
+import time
 
 from dotenv import load_dotenv
 import httpx
@@ -152,27 +153,41 @@ def _get_paths(member):
     return f"{gid}/stats.json", f"{gid}/dates.json"
 
 
-async def sync_all_guilds(bot):
-    """
-    Recorre todos los servidores del bot, carga sus stats.json y los envía a la API.
-    Retorna el número de servidores sincronizados exitosamente.
-    """
+_last_sync_cache = {}
+
+
+async def sync_all_guilds(bot, force: bool = False):
     sent = 0
-    print(f"🔄 Iniciando sincronización de {len(bot.guilds)} servidores...")
+    skipped = 0
+    current_time = time.time()
+    limit = 120
+
+    print(
+        f"🔄 [SYNC] Iniciando sincronización de {len(bot.guilds)} servidores... (Force: {force})"
+    )
 
     for guild in bot.guilds:
         gid = str(guild.id)
         stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
 
         if stats_path.exists():
+            last_sync = _last_sync_cache.get(gid, 0)
+
+            if not force and (current_time - last_sync) < limit:
+                skipped += 1
+                continue
+
             try:
-                # Cargar datos
                 call_data = load_json(f"{gid}/stats.json")
-                # Enviar a FastAPI
                 await send_to_fastapi(call_data, guild_id=guild)
+                _last_sync_cache[gid] = current_time
                 sent += 1
             except Exception as e:
-                print(f"   ❌ Error sincronizando guild {gid}: {e}")
+                print(f"   ❌ Error sincronizando servidor {gid}: {e}")
+    if skipped:
+        print(
+            f"Se han omitido varios servidores: {skipped}. La última copia fue hace menos de {limit} segundos."
+        )
     return sent
 
 

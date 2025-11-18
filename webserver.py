@@ -135,10 +135,6 @@ async def save_json_endpoint(payload: Payload, x_api_key: str = Header(None)):
 @app.post("/github-webhook")
 async def github_webhook(request: Request):
     """Webhook que GitHub llama al hacer push. Dispara un volcado de stats automático."""
-    print(
-        f"\033[93m[GITHUB] Detectado push en GitHub. Volcado automático iniciado.\033[0m"
-    )
-
     # Verificar firma de GitHub
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
@@ -154,7 +150,11 @@ async def github_webhook(request: Request):
         return {"status": "ignored", "reason": "not a push event"}
 
     # Ejecutar volcado
-    sent = await sync_all_guilds(bot_instance.bot)
+    print(
+        f"\033[93m[GITHUB] Detectado push en GitHub. Volcado automático iniciado.\033[0m"
+    )
+
+    sent = await sync_all_guilds(bot_instance.bot, force=False)
 
     print(
         f"\033[93m[GITHUB] ✅ Volcado automático completado. Servidores sincronizados: {sent}\033[0m"

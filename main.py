@@ -137,7 +137,7 @@ async def save_before_close():
     print("🚨 Apagado detectado: iniciando guardado a BBDD 🚨")
 
     try:
-        await sync_all_guilds(bot)
+        await sync_all_guilds(bot, force=False)
         print("✅ [SHUTDOWN] Datos guardados y sincronizados correctamente.")
     except Exception as e:
         print(f"❌ [SHUTDOWN] Error crítico guardando datos: {e}")

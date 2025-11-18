@@ -95,7 +95,7 @@ class SyncCog(commands.Cog):
         print("Volcado de bases de datos llamada.")
         await interaction.response.defer(ephemeral=True)
 
-        sent = await sync_all_guilds(self.bot)
+        sent = await sync_all_guilds(self.bot, force=True)
 
         msg = f"✅ Volcado manual completado — Servidores sincronizados: {sent}."
 
