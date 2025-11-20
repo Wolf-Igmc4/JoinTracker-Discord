@@ -9,7 +9,7 @@ class MiscCog(commands.Cog):
         self.bot = bot
 
     @commands.Cog.listener()
-    async def on_message(self, message):
+    async def on_message(self, message: discord.Message):
         # Ignorar mensajes del propio bot
         if message.author.bot:
             return
@@ -39,5 +39,5 @@ class MiscCog(commands.Cog):
 
 
 # ========= Setup ========= #
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(MiscCog(bot))

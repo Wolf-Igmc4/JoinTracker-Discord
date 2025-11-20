@@ -102,5 +102,5 @@ class SyncCog(commands.Cog):
         await interaction.followup.send(msg, ephemeral=True)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(SyncCog(bot))

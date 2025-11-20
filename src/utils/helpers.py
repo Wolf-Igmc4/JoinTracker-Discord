@@ -160,7 +160,7 @@ async def sync_all_guilds(bot, force: bool = False):
     sent = 0
     skipped = 0
     current_time = time.time()
-    limit = 120
+    limit = 240
 
     print(
         f"🔄 [SYNC] Iniciando sincronización de {len(bot.guilds)} servidores... (Force: {force})"

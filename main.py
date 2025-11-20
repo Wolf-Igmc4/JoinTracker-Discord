@@ -49,7 +49,7 @@ bot = bot_instance.bot
 async def restore_stats_per_guild():
     """
     Al arrancar, intenta recuperar stats por cada guild desde /stats/{gid}.
-    Además, sanea los datos recibidos para evitar problemas con claves no string.
+    Muestra la fecha de creación del registro (timestamp) en el log.
     """
     async with aiohttp.ClientSession() as session:
         print("\033[93mRestaurando stats.json por servidor...\033[0m")
@@ -67,32 +67,46 @@ async def restore_stats_per_guild():
                     if r.status != 200:
                         if r.status == 404:
                             print(
-                                f"[INIT] servidor {gid}: no hay registro previo en la BBDD (ERROR 404)."
+                                f"[INIT] servidor {gid}: no hay registro previo (404)."
                             )
                         else:
                             print(
-                                f"[INIT] servidor {gid}: error inesperado (ERROR {r.status})."
+                                f"[INIT] servidor {gid}: error inesperado ({r.status})."
                             )
                         continue
 
-                    data = await r.json()
+                    # Obtenemos la respuesta cruda del API
+                    payload = await r.json()
 
-                    if isinstance(data, dict) and "error" not in data:
-                        # Se sanearán los datos recibidos
-                        safe_data_local = stringify_keys(data)
+                    if isinstance(payload, dict) and "error" not in payload:
+                        # 1. Extracción del timestamp
+                        raw_date = payload.get("created_at")
+
+                        # Formateo simple de fecha para limpieza visual (opcional)
+                        if raw_date:
+                            ts_display = str(raw_date).split(".")[0]
+                        else:
+                            ts_display = "Fecha desconocida"
+
+                        # 2. Extracción de estadísticas
+                        # Si tu API devuelve la fila completa, los stats están bajo la clave "data"
+                        # Si tu API devuelve solo el JSON mezclado, payload es la data.
+                        stats_data = payload.get("data", payload)
+
+                        safe_data_local = stringify_keys(stats_data)
 
                         with stats_path.open("w", encoding="utf-8") as f:
                             json.dump(safe_data_local, f, indent=2)
 
                         print(
-                            f"\033[32m[INIT] stats.json restaurado para servidor {gid}\033[0m"
+                            f"\033[32m[INIT] stats.json restaurado para {gid} "
+                            f"| Fecha BBDD: {ts_display}\033[0m"
                         )
                     else:
-                        print(f"\033[33m[INIT] no hay datos para servidor {gid}\033[0m")
+                        print(f"\033[33m[INIT] no hay datos válidos para {gid}\033[0m")
+
             except Exception as e:
-                print(
-                    f"\033[31m[INIT] no se pudo recuperar stats para servidor {gid}: {e}\033[0m"
-                )
+                print(f"\033[31m[INIT] excepción al recuperar stats {gid}: {e}\033[0m")
         print("\033[93mRestauración completada.\033[0m")
 
 

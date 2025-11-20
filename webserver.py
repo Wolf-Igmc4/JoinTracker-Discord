@@ -80,8 +80,10 @@ def verify_github_signature(body: bytes, signature_header: str) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ARRANQUE DE BOT
     yield
-    print("\n🚨 [LIFESPAN] Apagado detectado. Verificando datos pendientes...")
+    # APAGADO DE BOT
+    print("\n🚨 [LIFESPAN] Apagado iniciado. Verificando datos pendientes...")
     try:
         if bot_instance.bot and bot_instance.bot.is_ready():
             # force=False: Si el webhook guardó hace poco, no se guardan datos.
@@ -186,11 +188,11 @@ async def github_webhook(request: Request):
     }
 
 
-@app.get("/stats/{guild_id}")
-async def get_guild_stats(guild_id: str, x_api_key: str = Header(None)):
+@app.get("/stats/{gid}")
+async def get_guild_stats(gid: str, x_api_key: str = Header(None)):
     """
-    Devuelve el último JSON guardado para el servidor indicado.
-    Protegido por API key (x-api-key).
+    Devuelve el último JSON guardado junto con su timestamp.
+    Estructura de respuesta: {"data": {...}, "created_at": "ISO_TIMESTAMP"}
     """
     if API_KEY is None or x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -199,12 +201,21 @@ async def get_guild_stats(guild_id: str, x_api_key: str = Header(None)):
     try:
         record = (
             session.query(JSONData)
-            .filter_by(guild_id=guild_id)
+            .filter_by(guild_id=gid)
             .order_by(JSONData.created_at.desc())
             .first()
         )
         if record:
-            return JSONResponse(content=record.data)
+            # Construimos una respuesta compuesta (Wrapper)
+            response_content = {
+                "data": record.data,
+                # Serializamos la fecha a formato ISO 8601 (string) para el JSON
+                "created_at": (
+                    record.created_at.isoformat() if record.created_at else None
+                ),
+            }
+            return JSONResponse(content=response_content)
+
         return {"error": "No hay datos guardados aún para este servidor."}
     finally:
         session.close()

@@ -1,5 +1,7 @@
 # src/cogs/voice_cog.py
 import asyncio
+
+import discord
 from src.utils.json_manager import load_json, save_json
 from discord.ext import commands
 from src.utils.helpers import (
@@ -29,7 +31,12 @@ class VoiceCog(commands.Cog):
         )  # Evita registrar múltiples intentos depresivos repetidos
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ):
         """Detecta cambios en los canales de voz."""
         try:
             # Movimiento entre canales
@@ -54,7 +61,7 @@ class VoiceCog(commands.Cog):
         except Exception as e:
             print(f"Error en voice_update: {e}")
 
-    async def member_joined(self, member, after):
+    async def member_joined(self, member: discord.Member, after: discord.VoiceState):
         """Maneja la entrada de un miembro a un canal de voz."""
 
         update_channel_history(self.historiales_por_canal, after.channel.id, 1)
@@ -114,7 +121,7 @@ class VoiceCog(commands.Cog):
             save_json(stats, f"{guild.id}/stats.json")
         save_json(time_entries, f"{guild.id}/dates.json")
 
-    async def member_left(self, member, before):
+    async def member_left(self, member: discord.Member, before: discord.VoiceState):
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
         print(
             f"\033[91m[{member.guild.name}] {member.display_name} ha salido de {before.channel.name}. "
@@ -176,7 +183,12 @@ class VoiceCog(commands.Cog):
             save_json(stats, f"{guild.id}/stats.json")
         save_json(time_entries, f"{guild.id}/dates.json")
 
-    async def member_moved(self, member, before, after):
+    async def member_moved(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ):
         """Maneja cuando un usuario se mueve de un canal a otro."""
 
         # Actualizar historial de canales
@@ -259,7 +271,7 @@ class VoiceCog(commands.Cog):
             save_json(stats, f"{guild.id}/stats.json")
         save_json(time_entries, f"{guild.id}/dates.json")
 
-    def start_timer(self, member, time_entries):
+    def start_timer(self, member: discord.Member, time_entries):
         mid = str(member.id)
         if mid in self.timers:
             return
@@ -300,7 +312,7 @@ class VoiceCog(commands.Cog):
 
         return False
 
-    def _end_total_solo(self, time_entries, stats, member):
+    def _end_total_solo(self, time_entries, stats, member: discord.Member):
         """
         Cierra el periodo 'total solo' leyendo de dates.json (time_entries)
         y suma el resultado en stats.json (stats).
@@ -345,7 +357,7 @@ class VoiceCog(commands.Cog):
             if not entry:
                 time_entries.pop(str(user_id))
 
-    async def cancel_timer(self, member):
+    async def cancel_timer(self, member: discord.Member):
         """Cancela y elimina un temporizador activo para un usuario si existe, esperando a que termine la tarea."""
         mid = str(member.id)
         task = self.timers.pop(mid, None)
@@ -361,6 +373,6 @@ class VoiceCog(commands.Cog):
                 )
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     """Carga del cog en el bot principal."""
     await bot.add_cog(VoiceCog(bot))

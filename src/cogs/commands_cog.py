@@ -86,7 +86,7 @@ class CommandsCog(commands.Cog):
     )
     async def call_stats(
         self,
-        interaction,  # sin anotación explícita
+        interaction: discord.Interaction,
         user1: discord.Member = None,
         user2: discord.Member = None,
     ):
@@ -137,117 +137,70 @@ class CommandsCog(commands.Cog):
 
         guild = interaction.guild
         call_data = load_json(f"{guild.id}/stats.json")
-
         member = member or interaction.user
         mid = str(member.id)
 
-        appears_as_target = mid in call_data
-        appears_as_source = any(mid in inner for inner in call_data.values())
+        # Detectar si hay datos
+        my_data = call_data.get(mid, {})
+        has_incoming = bool(my_data)
+        has_outgoing = any(mid in inner for inner in call_data.values())
 
-        if not (appears_as_target or appears_as_source):
-            await interaction.followup.send(
-                f"No hay datos de llamadas para **{member.display_name}**."
+        if not (has_incoming or has_outgoing):
+            return await interaction.followup.send(
+                f"No hay datos para **{member.display_name}**."
             )
-            return
+
+        # Identificar usuarios únicos (usando conjuntos para eficiencia)
+        uids_incoming = {
+            k
+            for k in my_data.keys()
+            if k not in ["depressive_attempts", "depressive_time", "total_solo_time"]
+        }
+        uids_outgoing = {
+            k
+            for k, v in call_data.items()
+            if mid in v and k not in ["depressive_attempts", "depressive_time"]
+        }
+        all_uids = list(uids_incoming | uids_outgoing)  # Unión de conjuntos
 
         msg = f"📊 **Estadísticas de llamadas de {member.display_name}:**\n"
 
-        # ====== Preparar usuarios a procesar ======
-        uids_to_process = set()
-        if appears_as_target:
-            uids_to_process.update(
-                uid
-                for uid in call_data[mid]
-                if uid not in ["depressive_attempts", "depressive_time"]
-            )
-        if appears_as_source:
-            for target_id, inner in call_data.items():
-                if mid in inner and target_id not in [
-                    "depressive_attempts",
-                    "depressive_time",
-                ]:
-                    uids_to_process.add(target_id)
-        uids_to_process = list(uids_to_process)
+        # 1. Bloque "Depressive" (Solo si existe)
+        dep_attempts = my_data.get("depressive_attempts", 0)
+        solo_time = my_data.get("total_solo_time", 0)
 
-        # ====== Obtener estadísticas secuencialmente ======
-        stats_cache = {}
-        for uid in uids_to_process:
-            stats_cache[uid] = await self._get_bidirectional_stats(call_data, mid, uid)
+        if dep_attempts > 0 or solo_time > 0:
+            msg += "🔹 **Estadísticas generales**\n"
+            if solo_time:
+                msg += f"   • Tiempo a solas: {self.fmt_time(solo_time)}.\n"
+            if dep_attempts:
+                msg += f"   • Intentos depresivos: {dep_attempts} ({self.fmt_time(my_data.get('depressive_time', 0))}).\n"
+            msg += "\n"
 
-        # ====== Etadísticas generales ======
-        try:
-            if appears_as_target:
-                depressive_attempts = call_data.get(mid, {}).get(
-                    "depressive_attempts", 0
-                )
-                depressive_time = call_data.get(mid, {}).get("depressive_time", 0)
-                total_solo_time = call_data.get(mid, {}).get("total_solo_time", 0)
-                if depressive_attempts:
-                    msg += f"🔹 **Estadísticas generales**\n"
-                    msg += f"   • Tiempo a solas total: {self.fmt_time(total_solo_time)}. Todo ese rato ha estado esperando a alguien, o pensando... o llorando desconsoladamente.\n"
-                    msg += f"   • Intentos depresivos: {depressive_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(depressive_time)}.\n"
-                msg += "\n   **Veces y tiempo total compartido con otros usuarios:**\n"
-                for uid in call_data.get(mid, {}):
-                    if uid in ["depressive_attempts", "depressive_time"]:
-                        continue
-                    stats = stats_cache.get(uid)
-                    if stats is None:
-                        continue
-                    user_obj = stats.get("user_obj")
-                    name_display = (
-                        user_obj.display_name
-                        if user_obj
-                        else f"[Usuario desconocido {uid}]"
-                    )
-                    msg += f"   • {name_display} → {self.fmt_count(stats.get('total_calls', 0))}. 🕒 Tiempo juntos: {self.fmt_time(stats.get('total_seconds', 0))}.\n"
-                msg += "\n"
+        # 2. Bucle único de renderizado
+        if all_uids:
+            msg += "🔹 **Interacciones detalladas entre usuarios:**\n"
+            msg += f"   (Formato: [Usuario] → X llamadas (Y tiempo) | Veces que entró con {member.display_name} | Veces que {member.display_name} entró con [Usuario])\n\n"
 
-            # ==== Otros se unieron al usuario ====
-            if appears_as_target:
-                msg += f"🔹 **Veces que otros se unieron a {member.display_name}:**\n"
-                for uid in call_data.get(mid, {}):
-                    if uid in ["depressive_attempts", "depressive_time"]:
-                        continue
-                    stats = stats_cache.get(uid)
-                    if stats is None:
-                        continue
-                    user_obj = stats.get("user_obj")
-                    name_display = (
-                        user_obj.display_name
-                        if user_obj
-                        else f"[Usuario desconocido {uid}]"
-                    )
-                    msg += f"   • {name_display} → {self.fmt_count(stats.get('calls_ab', 0))}.\n"
-                msg += "\n"
+            for uid in all_uids:
+                # Obtenemos stats bidireccionales una sola vez
+                stats = await self._get_bidirectional_stats(call_data, mid, uid)
+                if not stats:
+                    continue
 
-            # ==== Usuario se unió a otros ====
-            if appears_as_source:
-                msg += f"🔹 **Veces que {member.display_name} se unió a otros:**\n"
-                for target_id, inner in call_data.items():
-                    if inner is None:
-                        continue
-                    if mid in inner and target_id not in [
-                        "depressive_attempts",
-                        "depressive_time",
-                    ]:
-                        stats = stats_cache.get(target_id)
-                        if stats is None:
-                            continue
-                        user_obj = stats.get("user_obj")
-                        name_display = (
-                            user_obj.display_name
-                            if user_obj
-                            else f"[Usuario desconocido {target_id}]"
-                        )
-                        msg += f"   • {name_display} → {self.fmt_count(stats.get('calls_ba', 0))}.\n"
+                # Resolver nombre
+                user_obj = stats.get("user_obj")
+                name = user_obj.display_name if user_obj else f"[ID: {uid}]"
 
-            await interaction.followup.send(msg)
+                # Datos métricos
+                t_calls = self.fmt_count(stats.get("total_calls", 0))
+                t_time = self.fmt_time(stats.get("total_seconds", 0))
+                c_in = self.fmt_count(stats.get("calls_ab", 0))  # Otros -> Usuario
+                c_out = self.fmt_count(stats.get("calls_ba", 0))  # Usuario -> Otros
 
-        except Exception as e:
-            await interaction.followup.send(
-                "Se produjo un error al generar las estadísticas."
-            )
-            print(f"[ERROR] Al generar all_call_stats: {e}")
+                msg += f"   • {name} → {t_calls} llamadas ({t_time}) |📥 {c_in} | 📤 {c_out})\n"
+
+        await interaction.followup.send(msg)
 
     @app_commands.command(
         name="descargar_json",
@@ -322,5 +275,5 @@ class CommandsCog(commands.Cog):
 
 
 # ========= Setup ========= #
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(CommandsCog(bot))
