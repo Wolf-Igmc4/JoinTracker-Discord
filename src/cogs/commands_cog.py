@@ -172,15 +172,15 @@ class CommandsCog(commands.Cog):
         if dep_attempts > 0 or solo_time > 0:
             msg += "🔹 **Estadísticas generales**\n"
             if solo_time:
-                msg += f"   • Tiempo a solas: {self.fmt_time(solo_time)}.\n"
+                msg += f"   • Tiempo a solas total: {self.fmt_time(solo_time)}. Todo ese rato ha estado esperando a alguien, o pensando... o llorando desconsoladamente.\n"
             if dep_attempts:
-                msg += f"   • Intentos depresivos: {dep_attempts} ({self.fmt_time(my_data.get('depressive_time', 0))}).\n"
+                msg += f"   • Intentos depresivos: {dep_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(my_data.get('depressive_time', 0))}).\n"
             msg += "\n"
 
         # 2. Bucle único de renderizado
         if all_uids:
             msg += "🔹 **Interacciones detalladas entre usuarios:**\n"
-            msg += f"   (Formato: [U] → X (Y tiempo) | *Veces que [U] entró con {member.display_name}* | *Veces que {member.display_name} entró con [U]*)\n\n"
+            msg += f"   (Formato: *Usuario* → *Veces* (*Tiempo*) | *Veces que Usuario entró con {member.display_name}* | *Veces que {member.display_name} entró con Usuario*)\n\n"
 
             for uid in all_uids:
                 # Obtenemos stats bidireccionales una sola vez
