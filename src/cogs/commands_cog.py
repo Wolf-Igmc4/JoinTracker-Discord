@@ -180,7 +180,7 @@ class CommandsCog(commands.Cog):
         # 2. Bucle único de renderizado
         if all_uids:
             msg += "🔹 **Interacciones detalladas entre usuarios:**\n"
-            msg += f"   (Formato: *Usuario* → *Veces totales en llamada* (*Tiempo*) || *Veces que Usuario entró con {member.display_name}* | *Veces que {member.display_name} entró con Usuario*)\n\n"
+            msg += f"   (Formato: *Usuario* → *Veces totales en llamada* (*Tiempo*) — *Veces que Usuario entró con {member.display_name}* | *Veces que {member.display_name} entró con Usuario*)\n\n"
 
             for uid in all_uids:
                 # Obtenemos stats bidireccionales una sola vez
@@ -198,7 +198,7 @@ class CommandsCog(commands.Cog):
                 c_in = self.fmt_count(stats.get("calls_ab", 0))  # Otros -> Usuario
                 c_out = self.fmt_count(stats.get("calls_ba", 0))  # Usuario -> Otros
 
-                msg += f"   • {name} → {t_calls} ({t_time}) || {c_in} | {c_out}.\n"
+                msg += f"   • {name} → {t_calls} ({t_time}) — {c_in} | {c_out}.\n"
 
         await interaction.followup.send(msg)
 
