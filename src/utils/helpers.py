@@ -160,7 +160,7 @@ async def sync_all_guilds(bot, force: bool = False):
     sent = 0
     skipped = 0
     current_time = time.time()
-    limit = 240
+    limit = 180
 
     print(
         f"🔄 [SYNC] Iniciando sincronización de {len(bot.guilds)} servidores... (Force: {force})"
@@ -186,7 +186,7 @@ async def sync_all_guilds(bot, force: bool = False):
                 print(f"   ❌ Error sincronizando servidor {gid}: {e}")
     if skipped:
         print(
-            f"Se han omitido varios servidores: {skipped}. La última copia fue hace menos de {limit} segundos."
+            f"\033[33mSe han omitido varios servidores: {skipped}. La última copia fue hace menos de {limit} segundos.\033[0m"
         )
     return sent
 
