@@ -7,7 +7,7 @@ from discord.ext import commands, tasks
 from discord import app_commands, Interaction
 from src.config import RAIZ_PROYECTO
 from src.utils.json_manager import load_json
-from src.utils.helpers import send_to_fastapi, sync_all_guilds
+from src.utils.helpers import get_data_path, send_to_fastapi, sync_all_guilds
 
 
 class SyncCog(commands.Cog):
@@ -37,7 +37,7 @@ class SyncCog(commands.Cog):
             gid = str(guild.id)
             stats_path = RAIZ_PROYECTO / "data" / gid / "stats.json"
             if stats_path.exists():
-                call_data = load_json(f"{gid}/stats.json")
+                call_data = load_json(get_data_path(gid, "stats.json"))
                 await send_to_fastapi(call_data, guild_id=guild)
 
         self.next_flush_at = datetime.utcnow() + timedelta(hours=48)

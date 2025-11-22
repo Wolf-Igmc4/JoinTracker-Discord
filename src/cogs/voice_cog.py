@@ -11,6 +11,7 @@ from src.utils.helpers import (
     update_channel_history,
     timer_task,
     check_depressive_attempts,
+    get_data_path,
 )
 from datetime import datetime
 
@@ -20,15 +21,11 @@ class VoiceCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.timeout = 600  # Tiempo en segundos para considerar un intento depresivo
-        self.timers = {}  # Guarda tareas asyncio activas por usuario
-        self.historiales_por_canal = (
-            {}
-        )  # Historial de cambios de usuarios en cada canal
-        self.is_depressed = {}  # Marca usuarios que han estado solos demasiado tiempo
-        self.recorded_attempts = (
-            {}
-        )  # Evita registrar múltiples intentos depresivos repetidos
+        self.timeout = 600
+        self.timers = {}
+        self.historiales_por_canal = {}
+        self.is_depressed = {}
+        self.recorded_attempts = {}
 
     @commands.Cog.listener()
     async def on_voice_state_update(
@@ -73,11 +70,14 @@ class VoiceCog(commands.Cog):
         )
 
         guild = member.guild
-        stats = load_json(f"{guild.id}/stats.json")
-        time_entries = load_json(f"{guild.id}/dates.json")
+        stats = load_json(get_data_path(guild, "stats.json"))
+        time_entries = load_json(get_data_path(guild, "dates.json"))
 
-        # Se desmarcan flags de depresión (por si tenía alguno de antes)
+        # Se desmarcan flags de depresión y se comprueba si usuario no quiere seguimiento
         mid = str(member.id)
+        user_stats = stats.get(mid, {})
+        opted_out = user_stats.get("opt_out_logs", False)
+
         if self.is_depressed.get(mid, False):
             self.is_depressed[mid] = False
             self.recorded_attempts.pop(mid, None)
@@ -88,23 +88,29 @@ class VoiceCog(commands.Cog):
 
         # Canal con ≥2 miembros
         if num_members >= 2:
-
             for m in after.channel.members:
                 await self.cancel_timer(m)
                 self.is_depressed[str(m.id)] = False
                 self.recorded_attempts.pop(str(m.id), None)
 
-                # Si ese miembro tenía un periodo "total solo" abierto, lo cerramos y acumulamos en stats
-                elapsed = self._end_total_solo(time_entries, stats, m)
-                if elapsed:
-                    stats_changed = True
+                # Comprobamos opt_out del OTRO usuario
+                m_stats = stats.get(str(m.id), {})
+                m_opted_out = m_stats.get("opt_out_logs", False)
+
+                if not m_opted_out:  # Solo cerramos solo_time del otro si acepta logs
+                    elapsed = self._end_total_solo(time_entries, stats, m)
+                    if elapsed:
+                        stats_changed = True
 
                 if m != member:
-                    handle_call_data(stats, member, m)
-                    save_time(time_entries, member, m, True)
+                    if (
+                        not opted_out and not m_opted_out
+                    ):  # Solo guardamos si AMBOS aceptan logs
+                        handle_call_data(stats, member, m)
+                        save_time(time_entries, member, m, True)
 
         # Canal con 1 miembro (queda solo)
-        elif num_members == 1:
+        elif num_members == 1 and not opted_out:
             # Registrar inicio de tiempo total solo en dates.json
             if self._start_total_solo(time_entries, member):
                 stats_changed = True
@@ -112,14 +118,15 @@ class VoiceCog(commands.Cog):
             # Iniciar temporizador de depresión
             self.start_timer(member, time_entries)
 
-        # Canal sin miembros y otros casos
         else:
             pass
 
         # Guardamos dates y stats.json
         if stats_changed:
-            save_json(stats, f"{guild.id}/stats.json")
-        save_json(time_entries, f"{guild.id}/dates.json")
+            path_stats = get_data_path(guild, "stats.json")
+            save_json(path_stats, stats)
+        path_dates = get_data_path(guild, "dates.json")
+        save_json(path_dates, time_entries)
 
     async def member_left(self, member: discord.Member, before: discord.VoiceState):
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
@@ -129,48 +136,61 @@ class VoiceCog(commands.Cog):
         )
 
         guild = member.guild
-        stats = load_json(f"{guild.id}/stats.json")
-        time_entries = load_json(f"{guild.id}/dates.json")
+        stats = load_json(get_data_path(guild, "stats.json"))
+        time_entries = load_json(get_data_path(guild, "dates.json"))
         mid = str(member.id)
+
+        # Comprobamos opt_out del usuario que se va
+        user_stats = stats.get(mid, {})
+        opted_out = user_stats.get("opt_out_logs", False)
 
         stats_changed = False
 
-        # Convertimos el bool en dict para la función
         member_flag = self.is_depressed.get(mid, False)
         member_flag_dict = {mid: member_flag}
 
-        # Cancelamos timer del que sale (si existía)
         await self.cancel_timer(member)
 
-        # Se resetea flag solo si el timer no se completó
         if not member_flag:
             self.is_depressed[mid] = False
 
-        check_depressive_attempts(
-            member, member_flag_dict, stats, self.recorded_attempts, time_entries
-        )
-
-        # Si el miembro que sale tenía un _solo_total_start en time_entries, lo finalizamos
-        elapsed = self._end_total_solo(time_entries, stats, member)
-        if elapsed:
-            stats_changed = True
+        if not opted_out:
+            check_depressive_attempts(
+                member, member_flag_dict, stats, self.recorded_attempts, time_entries
+            )
+            elapsed = self._end_total_solo(time_entries, stats, member)
+            if elapsed:
+                stats_changed = True
 
         updated_users = []
 
         for m in before.channel.members:
             updated_users.append(m.display_name)
-            if m != member:
-                save_time(time_entries, member, m, False)
-                calculate_total_time(time_entries, stats, member, m)
 
-        # 2) Si después de la salida queda exactamente 1 miembro (queda solo)
+            # Comprobamos opt_out del usuario con el que estaba
+            m_stats = stats.get(str(m.id), {})
+            m_opted_out = m_stats.get("opt_out_logs", False)
+
+            if m != member:
+                if (
+                    not opted_out and not m_opted_out
+                ):  # Solo guardamos si AMBOS aceptan logs
+                    save_time(time_entries, member, m, False)
+                    calculate_total_time(time_entries, stats, member, m)
+
         if len(before.channel.members) == 1:
             remaining = before.channel.members[0]
-            # Registrar inicio de tiempo total solo en dates.json
-            if self._start_total_solo(time_entries, remaining):
-                stats_changed = True
 
-            # Iniciar temporizador de depresión (DESHABILITADO, NO NECESARIO SEGÚN DISEÑO)
+            # Comprobamos opt_out del que se queda solo
+            rem_stats = stats.get(str(remaining.id), {})
+            rem_opted_out = rem_stats.get("opt_out_logs", False)
+
+            # Registrar inicio de tiempo total solo
+            if not rem_opted_out:
+                if self._start_total_solo(time_entries, remaining):
+                    stats_changed = True
+
+            # Iniciar temporizador de depresión (TODO: puede ser interesante en futuro)
             # self.start_timer(remaining, time_entries)
 
         if updated_users:
@@ -180,8 +200,10 @@ class VoiceCog(commands.Cog):
 
         # Guardamos dates y stats.json
         if stats_changed:
-            save_json(stats, f"{guild.id}/stats.json")
-        save_json(time_entries, f"{guild.id}/dates.json")
+            path_stats = get_data_path(guild, "stats.json")
+            save_json(path_stats, stats)
+        path_dates = get_data_path(guild, "dates.json")
+        save_json(path_dates, time_entries)
 
     async def member_moved(
         self,
@@ -191,7 +213,6 @@ class VoiceCog(commands.Cog):
     ):
         """Maneja cuando un usuario se mueve de un canal a otro."""
 
-        # Actualizar historial de canales
         update_channel_history(self.historiales_por_canal, before.channel.id, -1)
         update_channel_history(self.historiales_por_canal, after.channel.id, 1)
 
@@ -205,12 +226,16 @@ class VoiceCog(commands.Cog):
         )
 
         guild = member.guild
-        stats = load_json(f"{guild.id}/stats.json")
-        time_entries = load_json(f"{guild.id}/dates.json")
+        stats = load_json(get_data_path(guild, "stats.json"))
+        time_entries = load_json(get_data_path(guild, "dates.json"))
+
+        mid = str(member.id)
+        user_stats = stats.get(mid, {})
+        opted_out = user_stats.get("opt_out_logs", False)
 
         stats_changed = False
 
-        # Canal destino tiene ≥2 miembros: cancelar timers y, por si alguno tenía start en stats, finalizarlo
+        # Canal destino
         if num_after >= 2:
             for m in after.channel.members:
                 midm = str(m.id)
@@ -218,58 +243,68 @@ class VoiceCog(commands.Cog):
                 self.recorded_attempts.pop(midm, None)
                 await self.cancel_timer(m)
 
-                # Si ese miembro tenía _solo_total_start en stats, finalizamos
-                elapsed = self._end_total_solo(time_entries, stats, m)
-                if elapsed:
-                    stats_changed = True
+                m_stats = stats.get(midm, {})
+                m_opted_out = m_stats.get("opt_out_logs", False)
+
+                if not m_opted_out:
+                    elapsed = self._end_total_solo(time_entries, stats, m)
+                    if elapsed:
+                        stats_changed = True
 
                 if m != member:
-                    save_time(time_entries, member, m, True)
-                    handle_call_data(stats, member, m)
+                    if not opted_out and not m_opted_out:
+                        save_time(time_entries, member, m, True)
+                        handle_call_data(stats, member, m)
 
-        # Canal destino tiene exactamente 1 persona (queda solo)
         elif num_after == 1:
-            # Registrar inicio de tiempo total solo en dates.json
-            if self._start_total_solo(time_entries, member):
-                stats_changed = True
+            if not opted_out:
+                if self._start_total_solo(time_entries, member):
+                    stats_changed = True
+                self.start_timer(member, time_entries)
 
-            # Iniciar temporizador de depresión
-            self.start_timer(member, time_entries)
-
-        # Canal origen tiene ≥2 miembros
+        # Canal origen
         if num_before >= 2:
             for m in before.channel.members:
                 print(f"Actualizando estadísticas para {member} con {m}")
-                if m != member:
-                    save_time(time_entries, member, m, False)
-                    handle_call_data(stats, member, m)
-                    calculate_total_time(time_entries, stats, member, m)
 
-        # Canal origen queda con exactamente 1 persona (queda solo)
+                # Comprobamos opt_out del usuario en origen
+                m_stats = stats.get(str(m.id), {})
+                m_opted_out = m_stats.get("opt_out_logs", False)
+
+                if m != member:
+                    if not opted_out and not m_opted_out:
+                        save_time(time_entries, member, m, False)
+                        handle_call_data(stats, member, m)
+                        calculate_total_time(time_entries, stats, member, m)
+
         elif num_before == 1:
             remaining_member = before.channel.members[0]
 
-            # Registrar inicio del tiempo solo para el que queda
-            if self._start_total_solo(time_entries, remaining_member):
-                stats_changed = True
+            rem_stats = stats.get(str(remaining_member.id), {})
+            rem_opted_out = rem_stats.get("opt_out_logs", False)
 
-            # Iniciar temporizador de depresión
-            self.start_timer(remaining_member, time_entries)
+            if not rem_opted_out:
+                if self._start_total_solo(time_entries, remaining_member):
+                    stats_changed = True
 
-            save_time(time_entries, member, remaining_member, False)
-            calculate_total_time(time_entries, stats, member, remaining_member)
-            print(
-                f"Actualizado el tiempo con el usuario: {remaining_member.display_name}"
-            )
+                self.start_timer(remaining_member, time_entries)
 
-        # Canal sin miembros y otros casos
+            if not opted_out and not rem_opted_out:
+                save_time(time_entries, member, remaining_member, False)
+                calculate_total_time(time_entries, stats, member, remaining_member)
+                print(
+                    f"Actualizado el tiempo con el usuario: {remaining_member.display_name}"
+                )
+
         else:
             pass
 
         # Guardamos dates y stats.json
         if stats_changed:
-            save_json(stats, f"{guild.id}/stats.json")
-        save_json(time_entries, f"{guild.id}/dates.json")
+            path_stats = get_data_path(guild, "stats.json")
+            save_json(path_stats, stats)
+        path_dates = get_data_path(guild, "dates.json")
+        save_json(path_dates, time_entries)
 
     def start_timer(self, member: discord.Member, time_entries):
         mid = str(member.id)
@@ -324,20 +359,17 @@ class VoiceCog(commands.Cog):
             try:
                 start_dt = datetime.fromisoformat(start_iso)
             except Exception:
-                # Formato raro → limpiar y no acumular
                 time_entries[mid]["_solo_total_start"] = None
                 return 0
 
             elapsed = (datetime.now() - start_dt).total_seconds()
 
-            # Asegurar existencia en stats para el contador de tiempo total
             self._ensure_user_stats(stats, mid)
 
             stats[mid]["total_solo_time"] = (
                 stats[mid].get("total_solo_time", 0) + elapsed
             )
 
-            # Reseteo tras cerrar el periodo
             time_entries[mid].pop("_solo_total_start", None)
             time_entries[mid].pop("_solo_total_channel", None)
 
@@ -353,7 +385,6 @@ class VoiceCog(commands.Cog):
         if entry:
             entry.pop("_solo_depressive_start", None)
             entry.pop("_solo_depressive_channel_id", None)
-            # Si no queda nada en el dict del usuario, lo eliminamos
             if not entry:
                 time_entries.pop(str(user_id))
 

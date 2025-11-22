@@ -147,10 +147,14 @@ async def send_to_fastapi(data, guild_id=None):
             )
 
 
-def _get_paths(member):
-    """Devuelve las rutas base de los JSON según el servidor."""
-    gid = str(member.guild.id)
-    return f"{gid}/stats.json", f"{gid}/dates.json"
+def get_data_path(guild_context, filename: str) -> str:
+    """
+    Genera la ruta estandarizada para archivos de datos.
+    :param guild_context: Puede ser un objeto (Guild/Member) o un ID (str/int).
+    :param filename: El nombre del archivo (ej. 'stats.json').
+    """
+    gid = str(guild_context.id) if hasattr(guild_context, "id") else str(guild_context)
+    return f"{gid}/{filename}"
 
 
 _last_sync_cache = {}
@@ -178,7 +182,7 @@ async def sync_all_guilds(bot, force: bool = False):
                 continue
 
             try:
-                call_data = load_json(f"{gid}/stats.json")
+                call_data = load_json(get_data_path(gid, "stats.json"))
                 await send_to_fastapi(call_data, guild_id=guild)
                 _last_sync_cache[gid] = current_time
                 sent += 1
@@ -213,8 +217,8 @@ def handle_call_data(stats, member, channel_member):
     stats[existing_id][joiner_id]["calls_started"] += 1
 
     # Guardar cambios en el JSON
-    stats_path, _ = _get_paths(member)
-    save_json(stats, stats_path)
+    path_stats = get_data_path(member.guild, "stats.json")
+    save_json(path_stats, stats)
 
 
 def check_depressive_attempts(
@@ -245,13 +249,14 @@ def check_depressive_attempts(
             # Limpiar los campos de tiempo depresivo
             time_entries[mid].pop("_solo_depressive_start", None)
             time_entries[mid].pop("_solo_depressive_channel_id", None)
-            save_json(time_entries, _get_paths(member)[1])
 
-    # Acumular tiempo solo en stats
+            path_dates = get_data_path(member.guild, "dates.json")
+            save_json(path_dates, time_entries)
+
+    # Acumular tiempo solo en stats y marcar intento como registrado
     stats[mid]["depressive_time"] = stats[mid].get("depressive_time", 0) + solo_secs
-    save_json(stats, _get_paths(member)[0])
-
-    # Marcar intento registrado
+    path_stats = get_data_path(member.guild, "stats.json")
+    save_json(path_stats, stats)
     recorded_attempts[mid] = True
 
     print(
@@ -287,8 +292,8 @@ def save_time(time_entries, member, channel_member, enter=True):
         add_end(member, channel_member)
         add_end(channel_member, member)
 
-    _, fechas_path = _get_paths(member)
-    save_json(time_entries, fechas_path)
+    path_dates = get_data_path(member.guild, "dates.json")
+    save_json(path_dates, time_entries)
 
 
 def calculate_total_time(time_entries, stats, member, channel_member):
@@ -323,12 +328,12 @@ def calculate_total_time(time_entries, stats, member, channel_member):
     time_entries[mid][oid]["entries"] = []
     time_entries[oid][mid]["entries"] = []
 
-    _, fechas_path = _get_paths(member)
-    save_json(time_entries, fechas_path)
+    path_dates = get_data_path(member.guild, "dates.json")
+    save_json(path_dates, time_entries)
 
     # guardar stats actualizado
-    stats_path, _ = _get_paths(member)
-    save_json(stats, stats_path)
+    path_stats = get_data_path(member.guild, "stats.json")
+    save_json(path_stats, stats)
 
 
 # ========= HISTORIAL DE CANALES =========
@@ -378,8 +383,8 @@ async def timer_task(member, is_depressed, timeout=150, time_entries=None):
                 member.voice.channel, "id", None
             )
 
-            _, fechas_path = _get_paths(member)
-            save_json(time_entries, fechas_path)
+            path_dates = get_data_path(member.guild, "dates.json")
+            save_json(path_dates, time_entries)
 
         print(
             f"\033[93m[{member.guild.name}] {member.display_name} se ha marcado con depresión.\033[0m"
@@ -459,13 +464,17 @@ async def update_json_file(bot, interaction, filename, global_vars: dict, timeou
             global_vars[filename] = new_data
 
         guild = interaction.guild
-        write_path = os.path.join(str(guild.id), filename) if guild else filename
-        os.makedirs(os.path.dirname(write_path) or ".", exist_ok=True)
-        save_json(new_data, write_path)
+        if guild:
+            path_write = get_data_path(guild, filename)
+        else:
+            path_write = filename
+
+        os.makedirs(os.path.dirname(path_write) or ".", exist_ok=True)
+        save_json(path_write, new_data)
 
         # Borrar la carpeta temporal
         try:
-            folder = os.path.dirname(write_path)
+            folder = os.path.dirname(path_write)
             if folder and os.path.exists(folder):
                 shutil.rmtree(folder)
         except Exception:

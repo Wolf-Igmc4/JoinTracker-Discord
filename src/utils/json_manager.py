@@ -19,8 +19,10 @@ def load_json(filename):
     return data
 
 
-def save_json(data, filename):
+def save_json(filename: str, data: dict):
     path = os.path.join(RAIZ_PROYECTO, "data", filename)
+
     os.makedirs(os.path.dirname(path), exist_ok=True)
+
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, sort_keys=True)

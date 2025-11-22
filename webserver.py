@@ -87,7 +87,8 @@ async def lifespan(app: FastAPI):
     try:
         if bot_instance.bot and bot_instance.bot.is_ready():
             # force=False: Si el webhook guardó hace poco, no se guardan datos.
-            await sync_all_guilds(bot_instance.bot, force=False)
+            sent = await sync_all_guilds(bot_instance.bot, force=False)
+            print(f"✅ [LIFESPAN] Apagado completado. Servidores sincronizados: {sent}")
         else:
             print("⚠️ Bot no listo, saltando guardado.")
     except Exception as e:

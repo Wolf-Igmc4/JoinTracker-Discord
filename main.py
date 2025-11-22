@@ -143,20 +143,6 @@ async def on_ready():
     bot.loop.create_task(restore_stats_per_guild())
 
 
-# ========= Funciones de apagado =========
-async def save_before_close():
-    """
-    Función ejecutada cuando se detecta señal de apagado.
-    """
-    print("🚨 Apagado detectado: iniciando guardado a BBDD 🚨")
-
-    try:
-        await sync_all_guilds(bot, force=False)
-        print("✅ [SHUTDOWN] Datos guardados y sincronizados correctamente.")
-    except Exception as e:
-        print(f"❌ [SHUTDOWN] Error crítico guardando datos: {e}")
-
-
 # ========= Función principal =========
 async def main():
     # Configuración estándar

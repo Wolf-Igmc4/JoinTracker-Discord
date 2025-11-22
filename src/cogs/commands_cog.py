@@ -1,19 +1,231 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from src.utils.json_manager import load_json
-from src.utils.helpers import update_json_file
+from src.utils.json_manager import load_json, save_json
+
+from src.utils.helpers import get_data_path, update_json_file
 import os
 from datetime import datetime
 from src.config import RAIZ_PROYECTO
+
+
+class ConfirmDeleteView(discord.ui.View):
+    def __init__(self, user_id: str, guild_id: int):
+        super().__init__(timeout=30)
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.message = None  # Aquí guardaremos el mensaje para editarlo al timeout
+
+    async def on_timeout(self):
+        """Se ejecuta cuando pasan 60s sin actividad."""
+        for child in self.children:
+            child.disabled = True
+
+        if self.message:
+            try:
+                await self.message.edit(
+                    content="⌛ **Tiempo de espera agotado. Operación cancelada.**",
+                    view=self,
+                )
+            except Exception:
+                pass
+
+    @discord.ui.button(label="Sí, borrar todo", style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if str(interaction.user.id) != self.user_id:
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        mid = self.user_id
+        files_to_clean = ["stats.json", "dates.json"]
+
+        for filename in files_to_clean:
+            try:
+                path = get_data_path(self.guild_id, filename)
+                data = load_json(path)
+
+                # Limpieza profunda en otros usuarios
+                for other_user_id, other_user_data in data.items():
+                    if other_user_id == mid:
+                        continue
+                    if isinstance(other_user_data, dict) and mid in other_user_data:
+                        del other_user_data[mid]
+
+                # Eliminación del propio usuario
+                if mid in data:
+                    del data[mid]
+
+                # Mantener Opt-out solo en stats para el futuro
+                if filename == "stats.json":
+                    data[mid] = {"opt_out_logs": True}
+
+                save_json(path, data)
+            except Exception as e:
+                print(f"[ERROR ConfirmDelete] {e}")
+
+        # Feedback final
+        new_embed = discord.Embed(
+            title="⚙️ Configuración",
+            description=f"Seguimiento: **❌ Inactivo** - Datos borrados\n"
+            f"ℹ️ *Si desactivas el seguimiento, tus tiempos no contarán.*",
+            color=discord.Color.blue(),
+        )
+
+        # Regeneramos la vista original desactivada
+        new_view = ToggleSettingsView(self.user_id, False, self.guild_id)
+
+        # Importante: Asignamos el mensaje de la vista anterior a la nueva para que el timeout funcione si sigue abierta
+        # (Aunque en este caso editamos la respuesta original)
+        await interaction.edit_original_response(
+            content="✅ **Historial eliminado correctamente.**",
+            embed=new_embed,
+            view=new_view,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if str(interaction.user.id) != self.user_id:
+            return
+        await interaction.response.edit_message(
+            content="Operación cancelada.", view=None, embed=None
+        )
+        self.stop()
+
+
+class ToggleSettingsView(discord.ui.View):
+    def __init__(self, user_id: str, logs_activados: bool, guild_id: int):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+        self.logs_activados = logs_activados
+        self.guild_id = guild_id
+        self.message = None  # Para el timeout
+
+        if self.logs_activados:
+            etiqueta = "Desactivar seguimiento"
+            valor = "desactivar"
+            emoji = "🔴"
+            descripcion = "Dejar de guardar tus estadísticas en llamada."
+        else:
+            etiqueta = "Activar seguimiento"
+            valor = "activar"
+            emoji = "🟢"
+            descripcion = "Guarda todas tus estadísticas en llamada."
+
+        select_menu = discord.ui.Select(
+            placeholder="Pulsa aquí para cambiar tu configuración...",
+            min_values=1,
+            max_values=1,
+            options=[
+                discord.SelectOption(
+                    label=etiqueta, value=valor, description=descripcion, emoji=emoji
+                )
+            ],
+        )
+        select_menu.callback = self.menu_callback
+        self.add_item(select_menu)
+
+        delete_btn = discord.ui.Button(
+            label="Borrar historial de interacciones",
+            style=discord.ButtonStyle.danger,
+            emoji="🗑️",
+            row=1,
+        )
+        delete_btn.callback = self.callback_delete
+        self.add_item(delete_btn)
+
+    async def on_timeout(self):
+        """Se ejecuta cuando pasan 60s sin actividad."""
+        for child in self.children:
+            child.disabled = True
+
+        if self.message:
+            try:
+                embed = self.message.embeds[0]
+                await self.message.edit(
+                    content="⌛ **Sesión caducada.** Usa el comando de nuevo.",
+                    embed=embed,
+                    view=self,
+                )
+            except Exception:
+                pass
+
+    async def menu_callback(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.user_id:
+            await interaction.response.send_message(
+                "No toques lo de otros.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            eleccion = interaction.data["values"][0]
+            path_stats = get_data_path(self.guild_id, "stats.json")
+            data = load_json(path_stats)
+
+            if self.user_id not in data:
+                data[self.user_id] = {}
+
+            if eleccion == "activar":
+                data[self.user_id]["opt_out_logs"] = False
+                new_status = True
+            else:
+                data[self.user_id]["opt_out_logs"] = True
+                new_status = False
+
+            save_json(path_stats, data)
+
+            new_embed = discord.Embed(
+                title="⚙️ Configuración",
+                description=f"**Seguimiento:** ***{'✅ Activo' if new_status else '❌ Inactivo'}***\n"
+                f"\nℹ️ *Si desactivas el seguimiento, no se registrarán tus tiempos.*",
+                color=discord.Color.blue(),
+            )
+
+            new_view = ToggleSettingsView(self.user_id, new_status, self.guild_id)
+
+            # Actualizamos el mensaje original
+            await interaction.edit_original_response(
+                content=None, embed=new_embed, view=new_view
+            )
+
+            # Vinculamos el mensaje antiguo a la nueva vista para que el timeout siga funcionando
+            new_view.message = await interaction.original_response()
+
+        except Exception as e:
+            print(f"[ERROR Settings] {e}")
+            await interaction.followup.send(
+                "Error al guardar preferencia.", ephemeral=True
+            )
+
+    async def callback_delete(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.user_id:
+            await interaction.response.send_message("No toques.", ephemeral=True)
+            return
+
+        view_confirm = ConfirmDeleteView(self.user_id, self.guild_id)
+
+        await interaction.response.send_message(
+            "⚠️ **¿Estás seguro de que quieres borrar todo tu historial?**\n\n"
+            "• Se eliminarán tus tiempos totales, tanto solo como depresivo.\n"
+            "• Se eliminará tu rastro en las estadísticas de otros usuarios.\n"
+            "• Esta acción **no se puede deshacer**.",
+            view=view_confirm,
+            ephemeral=True,
+        )
+
+        # Asignamos el mensaje recién enviado a la vista para el timeout
+        view_confirm.message = await interaction.original_response()
 
 
 class CommandsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data_dir = RAIZ_PROYECTO / "data"
-
-        # Inicializamos los JSONs vacíos (para update_json)
         self.call_data = {}
 
     async def _get_bidirectional_stats(self, call_data: dict, a: str, b: str):
@@ -35,8 +247,8 @@ class CommandsCog(commands.Cog):
         if a not in call_data or b not in call_data:
             return None
 
-        val_ab = call_data.get(a, {}).get(b, None)  # info que guarda a sobre b
-        val_ba = call_data.get(b, {}).get(a, None)  # info que guarda b sobre a
+        val_ab = call_data.get(a, {}).get(b, None)
+        val_ba = call_data.get(b, {}).get(a, None)
 
         # llamadas a->b
         if isinstance(val_ab, dict):
@@ -51,7 +263,6 @@ class CommandsCog(commands.Cog):
         total_calls = calls_ab + calls_ba
         total_seconds = seconds_ab or seconds_ba
 
-        # obtenemos usuario b (para mostrar nombre)
         try:
             user_obj = await self.bot.fetch_user(int(b))
         except Exception:
@@ -91,13 +302,14 @@ class CommandsCog(commands.Cog):
         user2: discord.Member = None,
     ):
         guild = interaction.guild
-        call_data = load_json(f"{guild.id}/stats.json")
+        call_data = load_json(get_data_path(guild, "stats.json"))
 
         user1 = user1 or interaction.user
         user2 = user2 or interaction.user
 
         u1, u2 = str(user1.id), str(user2.id)
         stats = await self._get_bidirectional_stats(call_data, u1, u2)
+
         if stats == "same_user":
             await interaction.response.send_message(
                 "¡Tonto! No te selecciones a ti mismo o lo dejes en blanco, QUE EXPLOTO! :(\n"
@@ -109,14 +321,11 @@ class CommandsCog(commands.Cog):
                 f"No hay datos de llamadas entre **{user1.display_name}** y **{user2.display_name}**."
             )
             return
-        # === Datos de veces que se unieron ===
+
         calls_user1_to_user2 = stats["calls_ba"]
         calls_user2_to_user1 = stats["calls_ab"]
-
-        # === Datos de tiempo en llamada ===
         total_seconds = stats["total_seconds"]
 
-        # === Mensaje final ===
         msg = (
             f"📊 **Estadísticas de llamada entre {user1.display_name} y {user2.display_name}:**\n\n"
             f"🔹 {user1.display_name} → {user2.display_name}: {self.fmt_count(calls_user1_to_user2)}.\n"
@@ -136,11 +345,11 @@ class CommandsCog(commands.Cog):
         await interaction.response.defer()
 
         guild = interaction.guild
-        call_data = load_json(f"{guild.id}/stats.json")
+        call_data = load_json(get_data_path(guild, "stats.json"))
+
         member = member or interaction.user
         mid = str(member.id)
 
-        # Detectar si hay datos
         my_data = call_data.get(mid, {})
         has_incoming = bool(my_data)
         has_outgoing = any(mid in inner for inner in call_data.values())
@@ -150,7 +359,6 @@ class CommandsCog(commands.Cog):
                 f"No hay datos para **{member.display_name}**."
             )
 
-        # Identificar usuarios únicos (usando conjuntos para eficiencia)
         uids_incoming = {
             k
             for k in my_data.keys()
@@ -161,11 +369,10 @@ class CommandsCog(commands.Cog):
             for k, v in call_data.items()
             if mid in v and k not in ["depressive_attempts", "depressive_time"]
         }
-        all_uids = list(uids_incoming | uids_outgoing)  # Unión de conjuntos
+        all_uids = list(uids_incoming | uids_outgoing)
 
         msg = f"📊 **Estadísticas de llamadas de {member.display_name}:**\n"
 
-        # 1. Bloque "Depressive" (Solo si existe)
         dep_attempts = my_data.get("depressive_attempts", 0)
         solo_time = my_data.get("total_solo_time", 0)
 
@@ -174,25 +381,21 @@ class CommandsCog(commands.Cog):
             if solo_time:
                 msg += f"   • Tiempo a solas total: {self.fmt_time(solo_time)}. Todo ese rato ha estado esperando a alguien, o pensando... o llorando desconsoladamente.\n"
             if dep_attempts:
-                msg += f"   • Intentos depresivos: {dep_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(my_data.get('depressive_time', 0))}).\n"
+                msg += f"   • Intentos depresivos: {dep_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(my_data.get('depressive_time', 0))}.\n"
             msg += "\n"
 
-        # 2. Bucle único de renderizado
         if all_uids:
             msg += "🔹 **Interacciones detalladas entre usuarios:**\n"
             msg += f"   (Formato: *Usuario* → *Veces totales en llamada* (*Tiempo*) — *Veces que Usuario entró con {member.display_name}* | *Veces que {member.display_name} entró con Usuario*)\n\n"
 
             for uid in all_uids:
-                # Obtenemos stats bidireccionales una sola vez
                 stats = await self._get_bidirectional_stats(call_data, mid, uid)
                 if not stats:
                     continue
 
-                # Resolver nombre
                 user_obj = stats.get("user_obj")
                 name = user_obj.display_name if user_obj else f"[ID: {uid}]"
 
-                # Datos métricos
                 t_calls = self.fmt_count(stats.get("total_calls", 0))
                 t_time = self.fmt_time(stats.get("total_seconds", 0))
                 c_in = self.fmt_count(stats.get("calls_ab", 0))  # Otros -> Usuario
@@ -218,8 +421,14 @@ class CommandsCog(commands.Cog):
             return
 
         files = []
+        # Nota: Aquí mantenemos os.path.join porque necesitamos la ruta absoluta para discord.File
+        # get_data_path nos da la relativa "GUID/file.json", así que construimos sobre self.data_dir
         for filename in ["stats.json", "dates.json"]:
+            # get_data_path devuelve "GUID/archivo.json", necesitamos unirlo a self.data_dir ("RAIZ/data")
+            # Sin embargo, como self.data_dir ya apunta a "data", y get_data_path devuelve "GUID/file",
+            # podemos hacerlo manual para asegurar la ruta física correcta:
             path = os.path.join(self.data_dir, str(guild.id), filename)
+
             if os.path.exists(path):
                 files.append(discord.File(path))
             else:
@@ -257,7 +466,7 @@ class CommandsCog(commands.Cog):
                 "Solo los administradores pueden usar esto.", ephemeral=True
             )
             return
-        # Indicamos que vamos a procesar la interacción y tardará un poco
+
         await interaction.response.defer(ephemeral=False)
 
         await interaction.followup.send(
@@ -271,6 +480,38 @@ class CommandsCog(commands.Cog):
 
         await interaction.followup.send(
             "Actualización de base de datos local finalizada.", ephemeral=False
+        )
+
+    @app_commands.command(
+        name="ajustes", description="Configura si se guardan tus datos."
+    )
+    async def settings(self, interaction: discord.Interaction):
+        user_id = str(interaction.user.id)
+        guild = interaction.guild
+
+        path_stats = get_data_path(guild, "stats.json")
+
+        # 1. Leer estado actual
+        call_data = load_json(path_stats)
+        user_data = call_data.get(user_id, {})
+
+        is_opt_out = user_data.get("opt_out_logs", False)
+        estado_actual = not is_opt_out
+
+        # 2. Instanciamos la vista pasando el ID del guild, no el path string
+        vista = ToggleSettingsView(
+            user_id, logs_activados=estado_actual, guild_id=guild.id
+        )
+
+        embed = discord.Embed(
+            title="⚙️ Configuración",
+            description=f"**Seguimiento:** ***{'✅ Activo' if estado_actual else '❌ Inactivo'}***\n"
+            f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. No se verán afectadas tus estadísticas previas.*",
+            color=discord.Color.blue(),
+        )
+
+        await interaction.response.send_message(
+            embed=embed, view=vista, ephemeral=False
         )
 
 
