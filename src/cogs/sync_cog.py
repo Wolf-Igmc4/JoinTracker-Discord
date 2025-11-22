@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 from discord import app_commands, Interaction
 from src.config import RAIZ_PROYECTO
-from src.utils.json_manager import load_json
+from src.utils.data_handler import load_json
 from src.utils.helpers import get_data_path, send_to_fastapi, sync_all_guilds
 
 

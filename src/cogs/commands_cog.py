@@ -1,23 +1,75 @@
+# src/cogs/commands_cog.py
+
 import discord
 from discord import app_commands
 from discord.ext import commands
-from src.utils.json_manager import load_json, save_json
-
+from src.utils.data_handler import load_json, save_json
 from src.utils.helpers import get_data_path, update_json_file
 import os
 from datetime import datetime
 from src.config import RAIZ_PROYECTO
 
 
+# --- FUNCIÓN AUXILIAR DE INTERFAZ ---
+def generate_settings_interface(
+    guild_id: int, user_id: str, specific_status_msg: str = None
+):
+    """
+    Genera el Embed y la Vista de configuración basados en el estado actual del usuario.
+    Centraliza la lógica visual para evitar duplicidad de código en los comandos y callbacks.
+
+    Args:
+        guild_id (int): ID del servidor.
+        user_id (str): ID del usuario.
+        specific_status_msg (str, optional): Texto personalizado para el estado. Si es None, se usa el estado del JSON.
+
+    Returns:
+        tuple[discord.Embed, discord.ui.View]: El embed y la vista listos para enviar.
+    """
+    path_stats = get_data_path(guild_id, "stats.json")
+    data = load_json(path_stats)
+
+    # Recuperación del estado de persistencia del usuario
+    user_data = data.get(user_id, {})
+    is_opt_out = user_data.get("opt_out_logs", False)
+    tracking_active = not is_opt_out
+
+    # Construcción del texto de estado
+    if specific_status_msg:
+        status_text = specific_status_msg
+    else:
+        status_text = "✅ Activo" if tracking_active else "❌ Inactivo"
+
+    # Generación del Embed informativo
+    embed = discord.Embed(
+        title="⚙️ Configuración",
+        description=f"**Seguimiento:** ***{status_text}***\n"
+        f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. "
+        f"No se verán afectadas las estadísticas guardadas previamente.*",
+        color=discord.Color.blue(),
+    )
+
+    # Generación de la Vista con los controles
+    view = ToggleSettingsView(user_id, tracking_active, guild_id)
+
+    return embed, view
+
+
 class ConfirmDeleteView(discord.ui.View):
+    """
+    Vista de confirmación para la eliminación de datos.
+    Tiene un tiempo de vida corto (30s) por seguridad.
+    """
+
     def __init__(self, user_id: str, guild_id: int):
         super().__init__(timeout=30)
         self.user_id = user_id
         self.guild_id = guild_id
-        self.message = None
+        self.message = None  # Referencia al mensaje para editarlo al expirar el tiempo
 
     async def on_timeout(self):
-        """Deshabilita botones y avisa del timeout."""
+        """Se ejecuta automáticamente tras 30s de inactividad."""
+        # Deshabilitar visualmente todos los componentes
         for child in self.children:
             child.disabled = True
 
@@ -34,31 +86,33 @@ class ConfirmDeleteView(discord.ui.View):
     async def confirm(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Verificación de propietario
         if str(interaction.user.id) != self.user_id:
             return
 
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
 
         mid = self.user_id
         files_to_clean = ["stats.json", "dates.json"]
 
+        # Proceso de limpieza en todos los archivos de datos relevantes
         for filename in files_to_clean:
             try:
                 path = get_data_path(self.guild_id, filename)
                 data = load_json(path)
 
-                # Limpieza profunda
+                # 1. Limpieza profunda: Eliminar referencias del usuario en registros de terceros
                 for other_user_id, other_user_data in data.items():
                     if other_user_id == mid:
                         continue
                     if isinstance(other_user_data, dict) and mid in other_user_data:
                         del other_user_data[mid]
 
-                # Auto-eliminación
+                # 2. Auto-eliminación: Borrar la entrada principal del usuario
                 if mid in data:
                     del data[mid]
 
-                # Persistencia Opt-out
+                # 3. Persistencia: Mantener la preferencia de Opt-out explícita para evitar seguimiento futuro.
                 if filename == "stats.json":
                     data[mid] = {"opt_out_logs": True}
 
@@ -66,24 +120,24 @@ class ConfirmDeleteView(discord.ui.View):
             except Exception as e:
                 print(f"[ERROR ConfirmDelete] {e}")
 
+        print(
+            f"[INFO] El usuario {interaction.user.name} ({self.user_id}) ha BORRADO su historial en el servidor {interaction.guild.name} ({self.guild_id})."
+        )
+
+        # Generación del feedback visual final (Sin botones, para cerrar el ciclo)
         new_embed = discord.Embed(
             title="⚙️ Configuración",
             description=f"**Seguimiento:** ***❌ Inactivo (Datos borrados)***\n"
-            f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. No se verán afectadas las estadísticas guardadas previamente.*",
+            f"\nℹ️ *Tu historial ha sido eliminado y el seguimiento desactivado permanentemente.*",
             color=discord.Color.blue(),
         )
 
-        new_view = ToggleSettingsView(self.user_id, False, self.guild_id)
-
-        # Editamos el mensaje de confirmación con el resultado
+        # Editamos el mensaje eliminando la vista (view=None) para que no salgan botones
         await interaction.edit_original_response(
             content="✅ **Historial eliminado correctamente.**",
             embed=new_embed,
-            view=new_view,
+            view=None,
         )
-
-        # TRUCO PRO: Pasamos la referencia del mensaje a la nueva vista para que su timeout funcione
-        new_view.message = await interaction.original_response()
 
         self.stop()
 
@@ -98,13 +152,19 @@ class ConfirmDeleteView(discord.ui.View):
 
 
 class ToggleSettingsView(discord.ui.View):
+    """
+    Vista principal de configuración.
+    Permite alternar el estado de seguimiento y acceder al borrado.
+    """
+
     def __init__(self, user_id: str, logs_activados: bool, guild_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=300)  # Timeout extendido (5 min) para mejor UX
         self.user_id = user_id
         self.logs_activados = logs_activados
         self.guild_id = guild_id
         self.message = None
 
+        # Configuración dinámica del texto del menú según el estado actual
         if self.logs_activados:
             etiqueta = "Desactivar seguimiento"
             valor = "desactivar"
@@ -139,17 +199,19 @@ class ToggleSettingsView(discord.ui.View):
         self.add_item(delete_btn)
 
     async def on_timeout(self):
-        """Se ejecuta tras 5 min de inactividad."""
+        """Gestión de recursos: Se ejecuta tras 5 min de inactividad."""
         for child in self.children:
-            child.disabled = True  # Deshabilita visualmente
+            child.disabled = True
 
         if self.message:
             try:
-                # Mantenemos el embed original, solo cambiamos texto y botones
-                embed = self.message.embeds[0]
+                # Preservamos el embed original, solo indicamos la expiración
+                fresh_embed, _ = generate_settings_interface(
+                    self.guild_id, self.user_id
+                )
                 await self.message.edit(
                     content="⌛ **Sesión caducada.** Usa el comando de nuevo si quieres modificar tu configuración.",
-                    embed=embed,
+                    embed=fresh_embed,
                     view=self,
                 )
             except Exception:
@@ -172,6 +234,7 @@ class ToggleSettingsView(discord.ui.View):
             if self.user_id not in data:
                 data[self.user_id] = {}
 
+            # Actualización del estado en JSON
             if eleccion == "activar":
                 data[self.user_id]["opt_out_logs"] = False
                 new_status = True
@@ -181,21 +244,19 @@ class ToggleSettingsView(discord.ui.View):
 
             save_json(path_stats, data)
 
-            new_embed = discord.Embed(
-                title="⚙️ Configuración",
-                description=f"**Seguimiento:** ***{'✅ Activo' if new_status else '❌ Inactivo'}***\n"
-                f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. No se verán afectadas las estadísticas guardadas previamente.*",
-                color=discord.Color.blue(),
+            print(
+                f"[INFO] El usuario {interaction.user.name} ({self.user_id}) cambió su configuración de seguimiento a {'Activo' if new_status else 'Inactivo'} en el servidor {interaction.guild.name} ({self.guild_id})."
             )
 
-            new_view = ToggleSettingsView(self.user_id, new_status, self.guild_id)
+            # Regeneración de la interfaz completa llamando al helper (DRY)
+            embed, view = generate_settings_interface(self.guild_id, self.user_id)
 
             await interaction.edit_original_response(
-                content=None, embed=new_embed, view=new_view
+                content=None, embed=embed, view=view
             )
 
-            # Vinculamos el mensaje a la nueva vista
-            new_view.message = await interaction.original_response()
+            # Reiniciamos el ciclo de vida vinculando el mensaje a la nueva vista
+            view.message = await interaction.original_response()
 
         except Exception as e:
             print(f"[ERROR Settings] {e}")
@@ -210,18 +271,19 @@ class ToggleSettingsView(discord.ui.View):
             )
             return
 
+        # Iniciamos la vista de confirmación intermedia
         view_confirm = ConfirmDeleteView(self.user_id, self.guild_id)
 
         await interaction.response.send_message(
             "⚠️ **¿Estás seguro de que quieres borrar todo tu historial?**\n\n"
-            "• Se eliminarán tus tiempos totales.\n"
+            "• Se eliminarán tus tiempos totales, tanto solo como depresivo.\n"
             "• Se eliminará tu rastro en las estadísticas de otros usuarios.\n"
             "• Esta acción **no se puede deshacer**.",
             view=view_confirm,
-            ephemeral=True,
+            ephemeral=False,
         )
 
-        # Vinculamos el mensaje a la vista de confirmación para el timeout
+        # Vinculación de mensaje necesaria para el timeout
         view_confirm.message = await interaction.original_response()
 
 
@@ -233,15 +295,14 @@ class CommandsCog(commands.Cog):
 
     async def _get_bidirectional_stats(self, call_data: dict, a: str, b: str):
         """
-        Devuelve un dict con:
+        Recupera y agrega estadísticas bidireccionales entre dos usuarios (a y b).
+
+        Retorna un diccionario con:
         - calls_ab: llamadas iniciadas por a hacia b
         - calls_ba: llamadas iniciadas por b hacia a
-        - total_calls: suma bidireccional
-        - seconds_ab: tiempo compartido registrado a->b
-        - seconds_ba: tiempo compartido registrado b->a
-        - total_seconds: suma de segundos (0 si no existe)
-        - user_obj: objeto discord.User de b (o None si no se puede obtener)
-        Los parámetros a y b pueden ser ints o strings; se usan como claves str en call_data.
+        - total_calls: suma total de interacciones
+        - total_seconds: tiempo total compartido (asumiendo simetría o suma)
+        - user_obj: objeto discord.User de b (para visualización)
         """
         a, b = str(a), str(b)
 
@@ -250,15 +311,16 @@ class CommandsCog(commands.Cog):
         if a not in call_data or b not in call_data:
             return None
 
+        # Obtener sub-diccionarios de interacción mutua
         val_ab = call_data.get(a, {}).get(b, None)
         val_ba = call_data.get(b, {}).get(a, None)
 
-        # llamadas a->b
+        # Extracción segura de datos A -> B
         if isinstance(val_ab, dict):
             calls_ab = val_ab.get(f"calls_started", 0)
             seconds_ab = val_ab.get("total_shared_time", 0) or 0
 
-        # llamadas b->a
+        # Extracción segura de datos B -> A
         if isinstance(val_ba, dict):
             calls_ba = val_ba.get(f"calls_started", 0)
             seconds_ba = val_ba.get("total_shared_time", 0) or 0
@@ -266,6 +328,7 @@ class CommandsCog(commands.Cog):
         total_calls = calls_ab + calls_ba
         total_seconds = seconds_ab or seconds_ba
 
+        # Intentar resolver el objeto usuario para obtener el nombre actualizado
         try:
             user_obj = await self.bot.fetch_user(int(b))
         except Exception:
@@ -279,9 +342,10 @@ class CommandsCog(commands.Cog):
             "user_obj": user_obj,
         }
 
-    # ===== Funciones auxiliares ===== #
+    # ===== Funciones auxiliares de formato ===== #
     @staticmethod
     def fmt_time(seconds):
+        """Formatea segundos a una cadena legible (segundos, minutos u horas)."""
         if seconds < 60:
             return f"{round(seconds)} segundos"
         minutes = seconds / 60
@@ -291,6 +355,7 @@ class CommandsCog(commands.Cog):
 
     @staticmethod
     def fmt_count(n):
+        """Pluralización básica para contadores."""
         return f"{n} vez" if n == 1 else f"{n} veces"
 
     # ====== Slash Commands ====== #
@@ -313,6 +378,7 @@ class CommandsCog(commands.Cog):
         u1, u2 = str(user1.id), str(user2.id)
         stats = await self._get_bidirectional_stats(call_data, u1, u2)
 
+        # Manejo de casos borde (mismo usuario o sin datos)
         if stats == "same_user":
             await interaction.response.send_message(
                 "¡Tonto! No te selecciones a ti mismo o lo dejes en blanco, QUE EXPLOTO! :(\n"
@@ -353,6 +419,7 @@ class CommandsCog(commands.Cog):
         member = member or interaction.user
         mid = str(member.id)
 
+        # Verificación de existencia de datos (entrada o salida)
         my_data = call_data.get(mid, {})
         has_incoming = bool(my_data)
         has_outgoing = any(mid in inner for inner in call_data.values())
@@ -362,20 +429,28 @@ class CommandsCog(commands.Cog):
                 f"No hay datos para **{member.display_name}**."
             )
 
-        uids_incoming = {
-            k
-            for k in my_data.keys()
-            if k not in ["depressive_attempts", "depressive_time", "total_solo_time"]
-        }
+        # Filtrado de claves: Excluimos metadatos internos para obtener solo IDs de usuarios
+        # Se utiliza comprensión de conjuntos para eficiencia y evitar duplicados
+        internal_keys = [
+            "depressive_attempts",
+            "depressive_time",
+            "total_solo_time",
+            "opt_out_logs",
+        ]
+
+        uids_incoming = {k for k in my_data.keys() if k not in internal_keys}
+
+        # Búsqueda inversa: IDs de usuarios que tienen registrado al usuario objetivo en sus datos
         uids_outgoing = {
-            k
-            for k, v in call_data.items()
-            if mid in v and k not in ["depressive_attempts", "depressive_time"]
+            k for k, v in call_data.items() if mid in v and k not in internal_keys
         }
+
+        # Unión de conjuntos para obtener lista única de interlocutores
         all_uids = list(uids_incoming | uids_outgoing)
 
         msg = f"📊 **Estadísticas de llamadas de {member.display_name}:**\n"
 
+        # Estadísticas generales (Soledad y Depresión)
         dep_attempts = my_data.get("depressive_attempts", 0)
         solo_time = my_data.get("total_solo_time", 0)
 
@@ -387,11 +462,13 @@ class CommandsCog(commands.Cog):
                 msg += f"   • Intentos depresivos: {dep_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(my_data.get('depressive_time', 0))}.\n"
             msg += "\n"
 
+        # Listado detallado de interacciones
         if all_uids:
             msg += "🔹 **Interacciones detalladas entre usuarios:**\n"
             msg += f"   (Formato: *Usuario* → *Veces totales en llamada* (*Tiempo*) — *Veces que Usuario entró con {member.display_name}* | *Veces que {member.display_name} entró con Usuario*)\n\n"
 
             for uid in all_uids:
+                # Obtenemos estadísticas agregadas bidireccionales
                 stats = await self._get_bidirectional_stats(call_data, mid, uid)
                 if not stats:
                     continue
@@ -425,11 +502,8 @@ class CommandsCog(commands.Cog):
 
         files = []
         # Nota: Aquí mantenemos os.path.join porque necesitamos la ruta absoluta para discord.File
-        # get_data_path nos da la relativa "GUID/file.json", así que construimos sobre self.data_dir
+        # get_data_path devuelve ruta relativa, usamos os.path.join para absoluta/sistema.
         for filename in ["stats.json", "dates.json"]:
-            # get_data_path devuelve "GUID/archivo.json", necesitamos unirlo a self.data_dir ("RAIZ/data")
-            # Sin embargo, como self.data_dir ya apunta a "data", y get_data_path devuelve "GUID/file",
-            # podemos hacerlo manual para asegurar la ruta física correcta:
             path = os.path.join(self.data_dir, str(guild.id), filename)
 
             if os.path.exists(path):
@@ -470,12 +544,15 @@ class CommandsCog(commands.Cog):
             )
             return
 
+        # Proceso asíncrono potencialmente lento, deferimos la respuesta
         await interaction.response.defer(ephemeral=False)
 
         await interaction.followup.send(
             f"Actualización de base de datos local iniciada.",
             ephemeral=False,
         )
+
+        # Variable global para inyección dinámica (si es requerida por update_json_file)
         global_vars = {"stats.json": self.call_data}
 
         for filename in ["stats.json", "dates.json"]:
@@ -490,30 +567,15 @@ class CommandsCog(commands.Cog):
     )
     async def settings(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
-        guild = interaction.guild
-        path_stats = get_data_path(guild, "stats.json")
+        guild_id = interaction.guild.id
 
-        call_data = load_json(path_stats)
-        user_data = call_data.get(user_id, {})
-        is_opt_out = user_data.get("opt_out_logs", False)
+        # Generamos la UI inicial centralizada, delegando la lógica visual
+        embed, view = generate_settings_interface(guild_id, user_id)
 
-        vista = ToggleSettingsView(
-            user_id, logs_activados=not is_opt_out, guild_id=guild.id
-        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 
-        embed = discord.Embed(
-            title="⚙️ Configuración",
-            description=f"**Seguimiento:** ***{'✅ Activo' if not is_opt_out else '❌ Inactivo'}***\n"
-            f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. No se verán afectadas las estadísticas guardadas previamente.*",
-            color=discord.Color.blue(),
-        )
-
-        await interaction.response.send_message(
-            embed=embed, view=vista, ephemeral=False
-        )
-
-        # Vinculamos el mensaje a la vista de confirmación para el timeout
-        vista.message = await interaction.original_response()
+        # Vinculación del mensaje a la vista para gestión del ciclo de vida (timeout)
+        view.message = await interaction.original_response()
 
 
 # ========= Setup ========= #

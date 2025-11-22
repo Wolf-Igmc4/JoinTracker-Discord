@@ -2,7 +2,7 @@
 import asyncio
 
 import discord
-from src.utils.json_manager import load_json, save_json
+from src.utils.data_handler import load_json, save_json
 from discord.ext import commands
 from src.utils.helpers import (
     handle_call_data,

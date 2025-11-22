@@ -11,7 +11,7 @@ import httpx
 
 from src.config import RAIZ_PROYECTO
 
-from .json_manager import load_json, save_json
+from .data_handler import load_json, save_json, stringify_keys
 
 
 # ========= Configuración FastAPI =========
@@ -21,56 +21,6 @@ API_KEY = os.getenv("API_KEY", None)
 
 
 # ========= FUNCIONES DE GUARDADO Y RED =========
-def stringify_keys(obj):
-    """
-    Recorre recursivamente un objeto (diccionarios y listas) y asegura que
-    todas las claves de los diccionarios sean de tipo 'str'.
-
-    Esta función es esencial para garantizar que los datos sean serializables
-    de forma segura en JSON, especialmente al interactuar entre diferentes
-    sistemas (como una BBDD, un cliente Python y un archivo JSON).
-
-    Maneja casos específicos:
-    - Convierte claves `None` (objeto Python) a "None" (string).
-    - Convierte claves "null" (string) a "None" (string) para evitar
-      la asimetría de deserialización de JSON (donde "null" -> None).
-    - Convierte otras claves no-string (como 'int') a su representación 'str'.
-
-    :param obj: El objeto (dict, list, u otro) a sanear.
-    :return: Una nueva copia del objeto con todas las claves de diccionario
-             convertidas a 'str'.
-    """
-    if isinstance(obj, dict):
-        new = {}
-        for k, v in obj.items():
-            if k is None or k == "null":
-                new_key = "None"
-            elif not isinstance(k, str):
-                new_key = str(k)
-            else:
-                new_key = k
-            new[new_key] = stringify_keys(v)
-        return new
-    elif isinstance(obj, list):
-        return [stringify_keys(i) for i in obj]
-    else:
-        return obj
-
-
-# DEBUG: encuentra claves no-str en un dict anidado
-def find_non_str_keys(obj, path="root"):
-    bad = []
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if not isinstance(k, str):
-                bad.append((path + f"/{repr(k)}", type(k).__name__))
-            bad.extend(find_non_str_keys(v, path + f"/{repr(k)}"))
-    elif isinstance(obj, list):
-        for i, v in enumerate(obj):
-            bad.extend(find_non_str_keys(v, path + f"[{i}]"))
-    return bad
-
-
 async def send_to_fastapi(data, guild_id=None):
     """
     Envía data a FastAPI por guild_id de manera asíncrona.
@@ -100,14 +50,6 @@ async def send_to_fastapi(data, guild_id=None):
         print(
             f"\033[33m[FastAPI][WARN] Datos para {guild_name} ({gid}) han sido sanitizados (claves no-str convertidas).\033[0m"
         )
-
-    bad = find_non_str_keys(safe_data)
-    if bad:
-        print(
-            f"\033[33m[DEBUG] Claves no-str detectadas para {guild_name} ({gid}):\033[0m"
-        )
-        for path, t in bad:
-            print("   ", path, "tipo:", t)
 
     payload = {"guild_id": gid, "data": safe_data}
     headers = {"x-api-key": API_KEY} if API_KEY else {}

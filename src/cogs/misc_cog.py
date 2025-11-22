@@ -1,5 +1,6 @@
 # src/cogs/misc_cog.py
 # Cog para funcionalidades misceláneas del bot, incluyendo mensajes cuando es mencionado.
+
 from discord.ext import commands
 import discord
 
@@ -10,8 +11,8 @@ class MiscCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Ignorar mensajes del propio bot
-        if message.author.bot:
+        # Ignorar mensajes del propio bot o respuestas a sus mensajes
+        if message.author.bot or message.type == discord.MessageType.reply:
             return
 
         # Si el bot fue mencionado directamente (@JoinTracker)
