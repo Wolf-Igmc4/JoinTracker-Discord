@@ -14,10 +14,10 @@ class ConfirmDeleteView(discord.ui.View):
         super().__init__(timeout=30)
         self.user_id = user_id
         self.guild_id = guild_id
-        self.message = None  # Aquí guardaremos el mensaje para editarlo al timeout
+        self.message = None
 
     async def on_timeout(self):
-        """Se ejecuta cuando pasan 60s sin actividad."""
+        """Deshabilita botones y avisa del timeout."""
         for child in self.children:
             child.disabled = True
 
@@ -47,18 +47,18 @@ class ConfirmDeleteView(discord.ui.View):
                 path = get_data_path(self.guild_id, filename)
                 data = load_json(path)
 
-                # Limpieza profunda en otros usuarios
+                # Limpieza profunda
                 for other_user_id, other_user_data in data.items():
                     if other_user_id == mid:
                         continue
                     if isinstance(other_user_data, dict) and mid in other_user_data:
                         del other_user_data[mid]
 
-                # Eliminación del propio usuario
+                # Auto-eliminación
                 if mid in data:
                     del data[mid]
 
-                # Mantener Opt-out solo en stats para el futuro
+                # Persistencia Opt-out
                 if filename == "stats.json":
                     data[mid] = {"opt_out_logs": True}
 
@@ -66,24 +66,25 @@ class ConfirmDeleteView(discord.ui.View):
             except Exception as e:
                 print(f"[ERROR ConfirmDelete] {e}")
 
-        # Feedback final
         new_embed = discord.Embed(
             title="⚙️ Configuración",
-            description=f"Seguimiento: **❌ Inactivo** - Datos borrados\n"
-            f"ℹ️ *Si desactivas el seguimiento, tus tiempos no contarán.*",
+            description=f"**Seguimiento:** ***❌ Inactivo (Datos borrados)***\n"
+            f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. No se verán afectadas las estadísticas guardadas previamente.*",
             color=discord.Color.blue(),
         )
 
-        # Regeneramos la vista original desactivada
         new_view = ToggleSettingsView(self.user_id, False, self.guild_id)
 
-        # Importante: Asignamos el mensaje de la vista anterior a la nueva para que el timeout funcione si sigue abierta
-        # (Aunque en este caso editamos la respuesta original)
+        # Editamos el mensaje de confirmación con el resultado
         await interaction.edit_original_response(
             content="✅ **Historial eliminado correctamente.**",
             embed=new_embed,
             view=new_view,
         )
+
+        # TRUCO PRO: Pasamos la referencia del mensaje a la nueva vista para que su timeout funcione
+        new_view.message = await interaction.original_response()
+
         self.stop()
 
     @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary)
@@ -98,11 +99,11 @@ class ConfirmDeleteView(discord.ui.View):
 
 class ToggleSettingsView(discord.ui.View):
     def __init__(self, user_id: str, logs_activados: bool, guild_id: int):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)
         self.user_id = user_id
         self.logs_activados = logs_activados
         self.guild_id = guild_id
-        self.message = None  # Para el timeout
+        self.message = None
 
         if self.logs_activados:
             etiqueta = "Desactivar seguimiento"
@@ -138,15 +139,16 @@ class ToggleSettingsView(discord.ui.View):
         self.add_item(delete_btn)
 
     async def on_timeout(self):
-        """Se ejecuta cuando pasan 60s sin actividad."""
+        """Se ejecuta tras 5 min de inactividad."""
         for child in self.children:
-            child.disabled = True
+            child.disabled = True  # Deshabilita visualmente
 
         if self.message:
             try:
+                # Mantenemos el embed original, solo cambiamos texto y botones
                 embed = self.message.embeds[0]
                 await self.message.edit(
-                    content="⌛ **Sesión caducada.** Usa el comando de nuevo.",
+                    content="⌛ **Sesión caducada.** Usa el comando de nuevo si quieres modificar tu configuración.",
                     embed=embed,
                     view=self,
                 )
@@ -156,7 +158,7 @@ class ToggleSettingsView(discord.ui.View):
     async def menu_callback(self, interaction: discord.Interaction):
         if str(interaction.user.id) != self.user_id:
             await interaction.response.send_message(
-                "No toques lo de otros.", ephemeral=True
+                "No toques lo de otros guarrilla.", ephemeral=True
             )
             return
 
@@ -182,18 +184,17 @@ class ToggleSettingsView(discord.ui.View):
             new_embed = discord.Embed(
                 title="⚙️ Configuración",
                 description=f"**Seguimiento:** ***{'✅ Activo' if new_status else '❌ Inactivo'}***\n"
-                f"\nℹ️ *Si desactivas el seguimiento, no se registrarán tus tiempos.*",
+                f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. No se verán afectadas las estadísticas guardadas previamente.*",
                 color=discord.Color.blue(),
             )
 
             new_view = ToggleSettingsView(self.user_id, new_status, self.guild_id)
 
-            # Actualizamos el mensaje original
             await interaction.edit_original_response(
                 content=None, embed=new_embed, view=new_view
             )
 
-            # Vinculamos el mensaje antiguo a la nueva vista para que el timeout siga funcionando
+            # Vinculamos el mensaje a la nueva vista
             new_view.message = await interaction.original_response()
 
         except Exception as e:
@@ -204,21 +205,23 @@ class ToggleSettingsView(discord.ui.View):
 
     async def callback_delete(self, interaction: discord.Interaction):
         if str(interaction.user.id) != self.user_id:
-            await interaction.response.send_message("No toques.", ephemeral=True)
+            await interaction.response.send_message(
+                "No toques lo de otros guarrilla.", ephemeral=True
+            )
             return
 
         view_confirm = ConfirmDeleteView(self.user_id, self.guild_id)
 
         await interaction.response.send_message(
             "⚠️ **¿Estás seguro de que quieres borrar todo tu historial?**\n\n"
-            "• Se eliminarán tus tiempos totales, tanto solo como depresivo.\n"
+            "• Se eliminarán tus tiempos totales.\n"
             "• Se eliminará tu rastro en las estadísticas de otros usuarios.\n"
             "• Esta acción **no se puede deshacer**.",
             view=view_confirm,
             ephemeral=True,
         )
 
-        # Asignamos el mensaje recién enviado a la vista para el timeout
+        # Vinculamos el mensaje a la vista de confirmación para el timeout
         view_confirm.message = await interaction.original_response()
 
 
@@ -488,31 +491,29 @@ class CommandsCog(commands.Cog):
     async def settings(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
         guild = interaction.guild
-
         path_stats = get_data_path(guild, "stats.json")
 
-        # 1. Leer estado actual
         call_data = load_json(path_stats)
         user_data = call_data.get(user_id, {})
-
         is_opt_out = user_data.get("opt_out_logs", False)
-        estado_actual = not is_opt_out
 
-        # 2. Instanciamos la vista pasando el ID del guild, no el path string
         vista = ToggleSettingsView(
-            user_id, logs_activados=estado_actual, guild_id=guild.id
+            user_id, logs_activados=not is_opt_out, guild_id=guild.id
         )
 
         embed = discord.Embed(
             title="⚙️ Configuración",
-            description=f"**Seguimiento:** ***{'✅ Activo' if estado_actual else '❌ Inactivo'}***\n"
-            f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. No se verán afectadas tus estadísticas previas.*",
+            description=f"**Seguimiento:** ***{'✅ Activo' if not is_opt_out else '❌ Inactivo'}***\n"
+            f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. No se verán afectadas las estadísticas guardadas previamente.*",
             color=discord.Color.blue(),
         )
 
         await interaction.response.send_message(
             embed=embed, view=vista, ephemeral=False
         )
+
+        # Vinculamos el mensaje a la vista de confirmación para el timeout
+        vista.message = await interaction.original_response()
 
 
 # ========= Setup ========= #

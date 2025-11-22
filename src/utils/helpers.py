@@ -167,7 +167,7 @@ async def sync_all_guilds(bot, force: bool = False):
     limit = 180
 
     print(
-        f"🔄 [SYNC] Iniciando sincronización de {len(bot.guilds)} servidores... (Force: {force})"
+        f"🔄 [SYNC] Comprobando estado de sincronización de {len(bot.guilds)} servidores... (Force: {force})"
     )
 
     for guild in bot.guilds:

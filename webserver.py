@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     # ARRANQUE DE BOT
     yield
     # APAGADO DE BOT
-    print("\n🚨 [LIFESPAN] Apagado iniciado. Verificando datos pendientes...")
+    print("\n🚨 [LIFESPAN] Apagado iniciado.")
     try:
         if bot_instance.bot and bot_instance.bot.is_ready():
             # force=False: Si el webhook guardó hace poco, no se guardan datos.
