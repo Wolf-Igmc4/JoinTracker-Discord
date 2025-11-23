@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request, Depends
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, JSON, TIMESTAMP, String
@@ -213,6 +212,6 @@ async def get_guild_stats(
                 record.created_at.isoformat() if record.created_at else None
             ),
         }
-        return JSONResponse(content=response_content)
+        return response_content
 
     return {"error": "No hay datos guardados aún para este servidor."}

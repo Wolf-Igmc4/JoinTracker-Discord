@@ -152,7 +152,7 @@ class CommandsCog(commands.Cog):
         # Lista de datos tal cual la pediste
         embed.description = (
             f"🔶  **Estadísticas entre {user1.display_name} y {user2.display_name}:**\n\n"
-            f"• **Tiempo compartido en llamada:** {time_str}\n"
+            f"• **Tiempo compartido en llamada:** `{time_str}`\n"
             f"• **Llamadas totales:** {total_calls}\n"
             f"• **Veces que {user1.display_name} se unió a {user2.display_name}:** {calls_u1_to_u2}\n"
             f"• **Veces que {user2.display_name} se unió a {user1.display_name}:** {calls_u2_to_u1}"
