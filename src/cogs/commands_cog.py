@@ -3,288 +3,12 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from src.utils.data_handler import load_json, save_json
+from src.utils.data_handler import load_json
 from src.utils.helpers import get_data_path, update_json_file
 import os
 from datetime import datetime
 from src.config import RAIZ_PROYECTO
-
-
-# --- FUNCIÓN AUXILIAR DE INTERFAZ ---
-def generate_settings_interface(
-    guild_id: int, user_id: str, specific_status_msg: str = None
-):
-    """
-    Genera el Embed y la Vista de configuración basados en el estado actual del usuario.
-    Centraliza la lógica visual para evitar duplicidad de código en los comandos y callbacks.
-
-    Args:
-        guild_id (int): ID del servidor.
-        user_id (str): ID del usuario.
-        specific_status_msg (str, optional): Texto personalizado para el estado. Si es None, se usa el estado del JSON.
-
-    Returns:
-        tuple[discord.Embed, discord.ui.View]: El embed y la vista listos para enviar.
-    """
-    path_stats = get_data_path(guild_id, "stats.json")
-    data = load_json(path_stats)
-
-    # Recuperación del estado de persistencia del usuario
-    user_data = data.get(user_id, {})
-    is_opt_out = user_data.get("opt_out_logs", False)
-    tracking_active = not is_opt_out
-
-    # Construcción del texto de estado
-    if specific_status_msg:
-        status_text = specific_status_msg
-    else:
-        status_text = "✅ Activo" if tracking_active else "❌ Inactivo"
-
-    # Generación del Embed informativo
-    embed = discord.Embed(
-        title="⚙️ Configuración",
-        description=f"**Seguimiento:** ***{status_text}***\n"
-        f"\nℹ️ *Si desactivas el seguimiento, tus tiempos en llamada no se registrarán. "
-        f"No se verán afectadas las estadísticas guardadas previamente.*",
-        color=discord.Color.blue(),
-    )
-
-    # Generación de la Vista con los controles
-    view = ToggleSettingsView(user_id, tracking_active, guild_id)
-
-    return embed, view
-
-
-class ConfirmDeleteView(discord.ui.View):
-    """
-    Vista de confirmación para la eliminación de datos.
-    Tiene un tiempo de vida corto (30s) por seguridad.
-    """
-
-    def __init__(self, user_id: str, guild_id: int):
-        super().__init__(timeout=30)
-        self.user_id = user_id
-        self.guild_id = guild_id
-        self.message = None  # Referencia al mensaje para editarlo al expirar el tiempo
-
-    async def on_timeout(self):
-        """Se ejecuta automáticamente tras 30s de inactividad."""
-        # Deshabilitar visualmente todos los componentes
-        for child in self.children:
-            child.disabled = True
-
-        if self.message:
-            try:
-                await self.message.edit(
-                    content="⌛ **Tiempo de espera agotado. Operación cancelada.**",
-                    view=self,
-                )
-            except Exception:
-                pass
-
-    @discord.ui.button(label="Sí, borrar todo", style=discord.ButtonStyle.danger)
-    async def confirm(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        # Verificación de propietario
-        if str(interaction.user.id) != self.user_id:
-            return
-
-        await interaction.response.defer(ephemeral=False)
-
-        mid = self.user_id
-        files_to_clean = ["stats.json", "dates.json"]
-
-        # Proceso de limpieza en todos los archivos de datos relevantes
-        for filename in files_to_clean:
-            try:
-                path = get_data_path(self.guild_id, filename)
-                data = load_json(path)
-
-                # 1. Limpieza profunda: Eliminar referencias del usuario en registros de terceros
-                for other_user_id, other_user_data in data.items():
-                    if other_user_id == mid:
-                        continue
-                    if isinstance(other_user_data, dict) and mid in other_user_data:
-                        del other_user_data[mid]
-
-                # 2. Auto-eliminación: Borrar la entrada principal del usuario
-                if mid in data:
-                    del data[mid]
-
-                # 3. Persistencia: Mantener la preferencia de Opt-out explícita para evitar seguimiento futuro.
-                if filename == "stats.json":
-                    data[mid] = {"opt_out_logs": True}
-
-                save_json(path, data)
-            except Exception as e:
-                print(f"[ERROR ConfirmDelete] {e}")
-
-        print(
-            f"[INFO] El usuario {interaction.user.name} ({self.user_id}) ha BORRADO su historial en el servidor {interaction.guild.name} ({self.guild_id})."
-        )
-
-        # Generación del feedback visual final (Sin botones, para cerrar el ciclo)
-        new_embed = discord.Embed(
-            title="⚙️ Configuración",
-            description=f"**Seguimiento:** ***❌ Inactivo (Datos borrados)***\n"
-            f"\nℹ️ *Tu historial ha sido eliminado y el seguimiento desactivado permanentemente.*",
-            color=discord.Color.blue(),
-        )
-
-        # Editamos el mensaje eliminando la vista (view=None) para que no salgan botones
-        await interaction.edit_original_response(
-            content="✅ **Historial eliminado correctamente.**",
-            embed=new_embed,
-            view=None,
-        )
-
-        self.stop()
-
-    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != self.user_id:
-            return
-        await interaction.response.edit_message(
-            content="Operación cancelada.", view=None, embed=None
-        )
-        self.stop()
-
-
-class ToggleSettingsView(discord.ui.View):
-    """
-    Vista principal de configuración.
-    Permite alternar el estado de seguimiento y acceder al borrado.
-    """
-
-    def __init__(self, user_id: str, logs_activados: bool, guild_id: int):
-        super().__init__(timeout=300)  # Timeout extendido (5 min) para mejor UX
-        self.user_id = user_id
-        self.logs_activados = logs_activados
-        self.guild_id = guild_id
-        self.message = None
-
-        # Configuración dinámica del texto del menú según el estado actual
-        if self.logs_activados:
-            etiqueta = "Desactivar seguimiento"
-            valor = "desactivar"
-            emoji = "🔴"
-            descripcion = "Dejar de guardar tus estadísticas en llamada."
-        else:
-            etiqueta = "Activar seguimiento"
-            valor = "activar"
-            emoji = "🟢"
-            descripcion = "Guarda todas tus estadísticas en llamada."
-
-        select_menu = discord.ui.Select(
-            placeholder="Pulsa aquí para cambiar tu configuración...",
-            min_values=1,
-            max_values=1,
-            options=[
-                discord.SelectOption(
-                    label=etiqueta, value=valor, description=descripcion, emoji=emoji
-                )
-            ],
-        )
-        select_menu.callback = self.menu_callback
-        self.add_item(select_menu)
-
-        delete_btn = discord.ui.Button(
-            label="Borrar historial de interacciones",
-            style=discord.ButtonStyle.danger,
-            emoji="🗑️",
-            row=1,
-        )
-        delete_btn.callback = self.callback_delete
-        self.add_item(delete_btn)
-
-    async def on_timeout(self):
-        """Gestión de recursos: Se ejecuta tras 5 min de inactividad."""
-        for child in self.children:
-            child.disabled = True
-
-        if self.message:
-            try:
-                # Preservamos el embed original, solo indicamos la expiración
-                fresh_embed, _ = generate_settings_interface(
-                    self.guild_id, self.user_id
-                )
-                await self.message.edit(
-                    content="⌛ **Sesión caducada.** Usa el comando de nuevo si quieres modificar tu configuración.",
-                    embed=fresh_embed,
-                    view=self,
-                )
-            except Exception:
-                pass
-
-    async def menu_callback(self, interaction: discord.Interaction):
-        if str(interaction.user.id) != self.user_id:
-            await interaction.response.send_message(
-                "No toques lo de otros guarrilla.", ephemeral=True
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            eleccion = interaction.data["values"][0]
-            path_stats = get_data_path(self.guild_id, "stats.json")
-            data = load_json(path_stats)
-
-            if self.user_id not in data:
-                data[self.user_id] = {}
-
-            # Actualización del estado en JSON
-            if eleccion == "activar":
-                data[self.user_id]["opt_out_logs"] = False
-                new_status = True
-            else:
-                data[self.user_id]["opt_out_logs"] = True
-                new_status = False
-
-            save_json(path_stats, data)
-
-            print(
-                f"[INFO] El usuario {interaction.user.name} ({self.user_id}) cambió su configuración de seguimiento a {'Activo' if new_status else 'Inactivo'} en el servidor {interaction.guild.name} ({self.guild_id})."
-            )
-
-            # Regeneración de la interfaz completa llamando al helper (DRY)
-            embed, view = generate_settings_interface(self.guild_id, self.user_id)
-
-            await interaction.edit_original_response(
-                content=None, embed=embed, view=view
-            )
-
-            # Reiniciamos el ciclo de vida vinculando el mensaje a la nueva vista
-            view.message = await interaction.original_response()
-
-        except Exception as e:
-            print(f"[ERROR Settings] {e}")
-            await interaction.followup.send(
-                "Error al guardar preferencia.", ephemeral=True
-            )
-
-    async def callback_delete(self, interaction: discord.Interaction):
-        if str(interaction.user.id) != self.user_id:
-            await interaction.response.send_message(
-                "No toques lo de otros guarrilla.", ephemeral=True
-            )
-            return
-
-        # Iniciamos la vista de confirmación intermedia
-        view_confirm = ConfirmDeleteView(self.user_id, self.guild_id)
-
-        await interaction.response.send_message(
-            "⚠️ **¿Estás seguro de que quieres borrar todo tu historial?**\n\n"
-            "• Se eliminarán tus tiempos totales, tanto solo como depresivo.\n"
-            "• Se eliminará tu rastro en las estadísticas de otros usuarios.\n"
-            "• Esta acción **no se puede deshacer**.",
-            view=view_confirm,
-            ephemeral=False,
-        )
-
-        # Vinculación de mensaje necesaria para el timeout
-        view_confirm.message = await interaction.original_response()
+from src.utils.ui_components import UserStatsPaginator, generate_settings_interface
 
 
 class CommandsCog(commands.Cog):
@@ -293,16 +17,11 @@ class CommandsCog(commands.Cog):
         self.data_dir = RAIZ_PROYECTO / "data"
         self.call_data = {}
 
-    async def _get_bidirectional_stats(self, call_data: dict, a: str, b: str):
+    async def _get_bidirectional_stats(
+        self, call_data: dict, a: str, b: str, guild: discord.Guild = None
+    ):
         """
-        Recupera y agrega estadísticas bidireccionales entre dos usuarios (a y b).
-
-        Retorna un diccionario con:
-        - calls_ab: llamadas iniciadas por a hacia b
-        - calls_ba: llamadas iniciadas por b hacia a
-        - total_calls: suma total de interacciones
-        - total_seconds: tiempo total compartido (asumiendo simetría o suma)
-        - user_obj: objeto discord.User de b (para visualización)
+        Recupera estadísticas y el OBJETO DE MIEMBRO DEL SERVIDOR (para que salga el apodo).
         """
         a, b = str(a), str(b)
 
@@ -311,28 +30,42 @@ class CommandsCog(commands.Cog):
         if a not in call_data or b not in call_data:
             return None
 
-        # Obtener sub-diccionarios de interacción mutua
         val_ab = call_data.get(a, {}).get(b, None)
         val_ba = call_data.get(b, {}).get(a, None)
 
-        # Extracción segura de datos A -> B
         if isinstance(val_ab, dict):
             calls_ab = val_ab.get(f"calls_started", 0)
             seconds_ab = val_ab.get("total_shared_time", 0) or 0
+        else:
+            calls_ab, seconds_ab = 0, 0  # Inicializar si no existe
 
-        # Extracción segura de datos B -> A
         if isinstance(val_ba, dict):
             calls_ba = val_ba.get(f"calls_started", 0)
             seconds_ba = val_ba.get("total_shared_time", 0) or 0
+        else:
+            calls_ba, seconds_ba = 0, 0  # Inicializar si no existe
 
         total_calls = calls_ab + calls_ba
         total_seconds = seconds_ab or seconds_ba
 
-        # Intentar resolver el objeto usuario para obtener el nombre actualizado
-        try:
-            user_obj = await self.bot.fetch_user(int(b))
-        except Exception:
-            user_obj = None
+        user_obj = None
+        if guild:
+            # Primero intentamos obtenerlo del servidor (tiene apodo)
+            user_obj = guild.get_member(int(b))
+
+            # Si no está en caché (get_member devuelve None), intentamos fetch (más lento pero seguro)
+            if user_obj is None:
+                try:
+                    user_obj = await guild.fetch_member(int(b))
+                except discord.NotFound:
+                    pass  # El usuario ya no está en el servidor
+
+        # Si falla (ej. usuario se fue del server), usamos el global (fetch_user)
+        if user_obj is None:
+            try:
+                user_obj = await self.bot.fetch_user(int(b))
+            except Exception:
+                user_obj = None
 
         return {
             "calls_ab": calls_ab,
@@ -342,7 +75,7 @@ class CommandsCog(commands.Cog):
             "user_obj": user_obj,
         }
 
-    # ===== Funciones auxiliares de formato ===== #
+    # ===== Funciones auxiliares de formato =====
     @staticmethod
     def fmt_time(seconds):
         """Formatea segundos a una cadena legible (segundos, minutos u horas)."""
@@ -358,7 +91,7 @@ class CommandsCog(commands.Cog):
         """Pluralización básica para contadores."""
         return f"{n} vez" if n == 1 else f"{n} veces"
 
-    # ====== Slash Commands ====== #
+    # ====== Comandos de barra ====== #
     @app_commands.command(
         name="datos_llamada",
         description="Devuelve las veces y el tiempo total que un usuario ha estado en llamada con otro.",
@@ -376,33 +109,56 @@ class CommandsCog(commands.Cog):
         user2 = user2 or interaction.user
 
         u1, u2 = str(user1.id), str(user2.id)
-        stats = await self._get_bidirectional_stats(call_data, u1, u2)
+        stats = await self._get_bidirectional_stats(call_data, u1, u2, guild=guild)
 
-        # Manejo de casos borde (mismo usuario o sin datos)
         if stats == "same_user":
             await interaction.response.send_message(
                 "¡Tonto! No te selecciones a ti mismo o lo dejes en blanco, QUE EXPLOTO! :(\n"
-                "Usa `/datos_totales_llamada` si quieres ver tus estadísticas con todos los del server con los que interactuaste."
+                "Usa `/datos_totales_llamada` si quieres ver tus estadísticas con todos los del server con los que interactuaste.",
+                ephemeral=True,
             )
             return
+
         if stats is None:
-            await interaction.response.send_message(
-                f"No hay datos de llamadas entre **{user1.display_name}** y **{user2.display_name}**."
+            embed_error = discord.Embed(
+                title=f"❌ No existen registros entre **{user1.display_name}** y **{user2.display_name}**.",
+                color=discord.Color.red(),
             )
+            await interaction.response.send_message(embed=embed_error, ephemeral=True)
             return
 
-        calls_user1_to_user2 = stats["calls_ba"]
-        calls_user2_to_user1 = stats["calls_ab"]
+        # Datos
+        calls_u1_to_u2 = stats["calls_ba"]
+        calls_u2_to_u1 = stats["calls_ab"]
         total_seconds = stats["total_seconds"]
+        total_calls = calls_u1_to_u2 + calls_u2_to_u1
+        time_str = self.fmt_time(total_seconds)
 
-        msg = (
-            f"📊 **Estadísticas de llamada entre {user1.display_name} y {user2.display_name}:**\n\n"
-            f"🔹 {user1.display_name} → {user2.display_name}: {self.fmt_count(calls_user1_to_user2)}.\n"
-            f"🔹 {user2.display_name} → {user1.display_name}: {self.fmt_count(calls_user2_to_user1)}.\n"
-            f"🕒 Tiempo total compartido en llamada: {self.fmt_time(total_seconds)}."
+        # --- EMBED DISEÑO LISTA ---
+        embed = discord.Embed(
+            title="📊 Reporte de interacciones",
+            color=discord.Color.gold(),
         )
 
-        await interaction.response.send_message(msg)
+        # 1. THUMBNAIL (Arriba derecha): User 2
+        embed.set_thumbnail(url=user2.display_avatar.url)
+
+        # 2. FOOTER (Abajo izquierda): User 1
+        # Ponemos su nombre en el texto para que se sepa de quién es la foto
+        embed.set_footer(
+            text=f"{user1.display_name}", icon_url=user1.display_avatar.url
+        )
+
+        # Lista de datos tal cual la pediste
+        embed.description = (
+            f"🔶  **Estadísticas entre {user1.display_name} y {user2.display_name}:**\n\n"
+            f"• **Tiempo compartido en llamada:** {time_str}\n"
+            f"• **Llamadas totales:** {total_calls}\n"
+            f"• **Veces que {user1.display_name} se unió a {user2.display_name}:** {calls_u1_to_u2}\n"
+            f"• **Veces que {user2.display_name} se unió a {user1.display_name}:** {calls_u2_to_u1}"
+        )
+
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
         name="datos_totales_llamada",
@@ -419,71 +175,71 @@ class CommandsCog(commands.Cog):
         member = member or interaction.user
         mid = str(member.id)
 
-        # Verificación de existencia de datos (entrada o salida)
+        # --- 1. Obtener Estadísticas Generales (NUEVO) ---
         my_data = call_data.get(mid, {})
+        solo_time = my_data.get("total_solo_time", 0)
+        dep_attempts = my_data.get("depressive_attempts", 0)
+        dep_time = my_data.get(
+            "depressive_time", 0
+        )  # Tiempo total de intentos depresivos
+
         has_incoming = bool(my_data)
         has_outgoing = any(mid in inner for inner in call_data.values())
 
-        if not (has_incoming or has_outgoing):
+        # El comando ahora falla solo si no hay *ningún* dato
+        if not (has_incoming or has_outgoing) and not (
+            solo_time > 0 or dep_attempts > 0
+        ):
             return await interaction.followup.send(
-                f"No hay datos para **{member.display_name}**."
+                f"No hay datos de llamada para **{member.display_name}**."
             )
 
-        # Filtrado de claves: Excluimos metadatos internos para obtener solo IDs de usuarios
-        # Se utiliza comprensión de conjuntos para eficiencia y evitar duplicados
+        # --- 2. Recolección y Procesamiento de datos de Interacción (Mismo código) ---
         internal_keys = [
             "depressive_attempts",
             "depressive_time",
             "total_solo_time",
             "opt_out_logs",
         ]
-
         uids_incoming = {k for k in my_data.keys() if k not in internal_keys}
-
-        # Búsqueda inversa: IDs de usuarios que tienen registrado al usuario objetivo en sus datos
         uids_outgoing = {
             k for k, v in call_data.items() if mid in v and k not in internal_keys
         }
-
-        # Unión de conjuntos para obtener lista única de interlocutores
         all_uids = list(uids_incoming | uids_outgoing)
 
-        msg = f"📊 **Estadísticas de llamadas de {member.display_name}:**\n"
+        stats_list = []
+        for uid in all_uids:
+            stats = await self._get_bidirectional_stats(
+                call_data, mid, uid, guild=guild
+            )
+            if not stats:
+                continue
+            user_obj = stats.get("user_obj")
+            name = user_obj.display_name if user_obj else f"Usuario ID: {uid}"
 
-        # Estadísticas generales (Soledad y Depresión)
-        dep_attempts = my_data.get("depressive_attempts", 0)
-        solo_time = my_data.get("total_solo_time", 0)
+            stats_entry = {
+                "name": name,
+                "total_seconds": stats.get("total_seconds", 0),
+                "total_calls": stats.get("total_calls", 0),
+                "calls_in": stats.get("calls_ab", 0),
+                "calls_out": stats.get("calls_ba", 0),
+            }
+            stats_list.append(stats_entry)
 
-        if dep_attempts > 0 or solo_time > 0:
-            msg += "🔹 **Estadísticas generales**\n"
-            if solo_time:
-                msg += f"   • Tiempo a solas total: {self.fmt_time(solo_time)}. Todo ese rato ha estado esperando a alguien, o pensando... o llorando desconsoladamente.\n"
-            if dep_attempts:
-                msg += f"   • Intentos depresivos: {dep_attempts}. Ha estado llorando desconsoladamente {self.fmt_time(my_data.get('depressive_time', 0))}.\n"
-            msg += "\n"
+        stats_list.sort(key=lambda x: x["total_seconds"], reverse=True)
 
-        # Listado detallado de interacciones
-        if all_uids:
-            msg += "🔹 **Interacciones detalladas entre usuarios:**\n"
-            msg += f"   (Formato: *Usuario* → *Veces totales en llamada* (*Tiempo*) — *Veces que Usuario entró con {member.display_name}* | *Veces que {member.display_name} entró con Usuario*)\n\n"
+        # --- 3. RESPUESTA VISUAL (ACTUALIZADO: Pasando los nuevos datos) ---
+        view = UserStatsPaginator(
+            stats_list,
+            member.display_name,
+            solo_time=solo_time,
+            dep_attempts=dep_attempts,
+            dep_time=dep_time,
+        )
+        embed, _ = view.get_page_content()
 
-            for uid in all_uids:
-                # Obtenemos estadísticas agregadas bidireccionales
-                stats = await self._get_bidirectional_stats(call_data, mid, uid)
-                if not stats:
-                    continue
-
-                user_obj = stats.get("user_obj")
-                name = user_obj.display_name if user_obj else f"[ID: {uid}]"
-
-                t_calls = self.fmt_count(stats.get("total_calls", 0))
-                t_time = self.fmt_time(stats.get("total_seconds", 0))
-                c_in = self.fmt_count(stats.get("calls_ab", 0))  # Otros -> Usuario
-                c_out = self.fmt_count(stats.get("calls_ba", 0))  # Usuario -> Otros
-
-                msg += f"   • {name} → {t_calls} ({t_time}) — {c_in} | {c_out}.\n"
-
-        await interaction.followup.send(msg)
+        await interaction.followup.send(embed=embed, view=view)
+        view.message = await interaction.original_response()
 
     @app_commands.command(
         name="descargar_json",
